@@ -15,7 +15,7 @@ SUPERSET_NATIVE_PID_FILE="$RUNTIME_DIR/superset-native.pid"
 SUPERSET_PROVISION_PID_FILE="$RUNTIME_DIR/superset-provision.pid"
 SUPERSET_URL="http://localhost:8088"
 SUPERSET_HEALTH_URL="$SUPERSET_URL/health"
-SUPERSET_SECRET_KEY_VALUE="internal-lakehouse-demo"
+SUPERSET_SECRET_KEY_VALUE="datawizz-local-superset-demo-secret-2026"
 SUPERSET_DEFAULT_USERNAME="admin"
 SUPERSET_DEFAULT_PASSWORD="admin"
 SUPERSET_DEFAULT_EMAIL="admin@example.com"
@@ -52,6 +52,7 @@ stop_pid_from_file() {
   local pid_file="$1"
   local label="$2"
   local pid
+  local command_line
 
   [[ -f "$pid_file" ]] || return 0
   pid="$(cat "$pid_file" 2>/dev/null || true)"
@@ -61,6 +62,12 @@ stop_pid_from_file() {
   }
 
   if pid_is_running "$pid"; then
+    command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+    if [[ -z "$command_line" || ( "$command_line" != *"$ROOT_DIR"* && "$command_line" != *"superset"* ) ]]; then
+      log "Ignoring stale $label PID file because pid $pid is owned by another process"
+      rm -f "$pid_file"
+      return 0
+    fi
     log "Stopping $label (pid $pid)"
     kill "$pid" >/dev/null 2>&1 || true
     sleep 1
@@ -81,6 +88,27 @@ require_cmd() {
 
 command_exists() {
   command -v "$1" >/dev/null 2>&1
+}
+
+pick_backend_python() {
+  local requested="${DATAWIZZ_PYTHON_BIN:-}"
+  local candidate
+
+  for candidate in "$requested" python3.13 python3.12 python3.11 python3; do
+    [[ -n "$candidate" ]] || continue
+    command_exists "$candidate" || continue
+    if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+backend_venv_is_compatible() {
+  [[ -x "$BACKEND_DIR/.venv/bin/python" ]] || return 1
+  "$BACKEND_DIR/.venv/bin/python" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1
 }
 
 pid_is_running() {
@@ -191,12 +219,12 @@ pick_superset_python() {
   local requested="${SUPERSET_PYTHON_BIN:-}"
   local candidate version
 
-  for candidate in "$requested" python3.12 python3.11 python3.10 python3; do
+  for candidate in "$requested" python3.13 python3.12 python3.11 python3; do
     [[ -n "$candidate" ]] || continue
     command_exists "$candidate" || continue
     version="$("$candidate" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true)"
     [[ -n "$version" ]] || continue
-    if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1; then
+    if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
       printf '%s' "$candidate"
       return 0
     fi
@@ -213,8 +241,10 @@ with_superset_env() {
 }
 
 superset_venv_matches_workspace() {
-  [[ -f "$SUPERSET_VENV_DIR/bin/activate" ]] || return 1
-  grep -Fq "$SUPERSET_VENV_DIR" "$SUPERSET_VENV_DIR/bin/activate"
+  [[ -x "$SUPERSET_VENV_DIR/bin/python" ]] || return 1
+  "$SUPERSET_VENV_DIR/bin/python" -c \
+    'import pathlib, sys; raise SystemExit(0 if pathlib.Path(sys.prefix).resolve() == pathlib.Path(sys.argv[1]).resolve() else 1)' \
+    "$SUPERSET_VENV_DIR"
 }
 
 superset_packages_ready() {
@@ -230,14 +260,15 @@ ensure_native_superset() {
   local superset_python
   local deps_marker="$SUPERSET_VENV_DIR/.deps-installed"
   local version_marker="$SUPERSET_VENV_DIR/.superset-version"
-  local requested_spec="${SUPERSET_PIP_SPEC:-apache-superset}"
-  local supplemental_packages="${SUPERSET_SUPPLEMENTAL_PACKAGES:-cachetools duckdb duckdb-engine}"
+  local requested_spec="${SUPERSET_PIP_SPEC:-apache-superset==6.1.0}"
+  local supplemental_packages="${SUPERSET_SUPPLEMENTAL_PACKAGES:-cachetools==7.1.4 duckdb==1.5.4 duckdb-engine==0.17.0}"
+  local runtime_spec="$requested_spec|$supplemental_packages"
   local admin_marker="$RUNTIME_DIR/.superset-admin-created"
   local install_log="$RUNTIME_DIR/superset-install.log"
   local init_log="$RUNTIME_DIR/superset-init.log"
 
   superset_python="$(pick_superset_python)" || {
-    log "Superset native mode requires Python 3.10+ on PATH. Set SUPERSET_PYTHON_BIN if you want to force a specific interpreter."
+    log "Superset native mode requires Python 3.11+ on PATH. Set SUPERSET_PYTHON_BIN if you want to force a specific interpreter."
     exit 1
   }
 
@@ -255,10 +286,10 @@ ensure_native_superset() {
 
   if superset_packages_ready; then
     [[ -f "$deps_marker" ]] || touch "$deps_marker"
-    [[ -f "$version_marker" ]] || printf '%s' "$requested_spec" >"$version_marker"
+    [[ -f "$version_marker" ]] || printf '%s' "$runtime_spec" >"$version_marker"
   fi
 
-  if ! superset_packages_ready || [[ "$(cat "$version_marker" 2>/dev/null || true)" != "$requested_spec" ]]; then
+  if ! superset_packages_ready || [[ "$(cat "$version_marker" 2>/dev/null || true)" != "$runtime_spec" ]]; then
     log "Installing native Superset runtime ($requested_spec)"
     (
       "$SUPERSET_VENV_DIR/bin/python" -m pip install --upgrade pip setuptools wheel
@@ -266,7 +297,7 @@ ensure_native_superset() {
       if [[ -n "$supplemental_packages" ]]; then
         "$SUPERSET_VENV_DIR/bin/python" -m pip install $supplemental_packages
       fi
-      printf '%s' "$requested_spec" >"$version_marker"
+      printf '%s' "$runtime_spec" >"$version_marker"
       touch "$deps_marker"
     ) >"$install_log" 2>&1 || {
       log "Native Superset installation failed. See $install_log"
@@ -334,15 +365,16 @@ start_native_superset() {
     return 0
   fi
 
-  if [[ -f "$SUPERSET_NATIVE_PID_FILE" ]] && pid_is_running "$(cat "$SUPERSET_NATIVE_PID_FILE")"; then
-    log "Native Superset process is already running but not healthy yet. Reusing existing bootstrap."
-    return 0
+  if [[ -f "$SUPERSET_NATIVE_PID_FILE" ]]; then
+    stop_pid_from_file "$SUPERSET_NATIVE_PID_FILE" "stale native Superset bootstrap"
   fi
 
-  log "Launching native Superset bootstrap in the background on $SUPERSET_URL"
-  log "Superset may spend a minute installing packages the first time. The main DataWizz app is still available while this finishes."
+  log "Preparing native Superset before launch"
+  log "The first run installs a pinned Superset runtime and can take several minutes. Keep this launcher running until setup completes."
+  ensure_native_superset
+
+  log "Launching native Superset on $SUPERSET_URL"
   (
-    ensure_native_superset
     with_superset_env
     exec "$SUPERSET_VENV_DIR/bin/superset" run -h 0.0.0.0 -p 8088
   ) >"$superset_log" 2>&1 &
@@ -440,10 +472,21 @@ PY
 
 ensure_backend_env() {
   local deps_marker="$BACKEND_DIR/.venv/.deps-installed"
+  local backend_python
+
+  backend_python="$(pick_backend_python)" || {
+    log "DataWizz requires Python 3.11 or newer. Install Python 3.11+ or set DATAWIZZ_PYTHON_BIN to a compatible interpreter."
+    exit 1
+  }
+
+  if [[ -d "$BACKEND_DIR/.venv" ]] && ! backend_venv_is_compatible; then
+    log "Rebuilding backend virtual environment because it does not use Python 3.11+"
+    rm -rf "$BACKEND_DIR/.venv"
+  fi
 
   if [[ ! -d "$BACKEND_DIR/.venv" ]]; then
-    log "Creating backend virtual environment"
-    python3 -m venv "$BACKEND_DIR/.venv"
+    log "Creating backend virtual environment with $backend_python"
+    "$backend_python" -m venv "$BACKEND_DIR/.venv"
   fi
 
   if [[ ! -f "$deps_marker" || "$BACKEND_DIR/pyproject.toml" -nt "$deps_marker" ]]; then
@@ -528,7 +571,7 @@ start_local() {
       cd "$BACKEND_DIR"
       source .venv/bin/activate
       DATABASE_URL=sqlite:///./local.db \
-        uvicorn app.main:app --reload --host 0.0.0.0 --port "$backend_port"
+        uvicorn app.main:app --reload --reload-dir app --reload-dir alembic --host 0.0.0.0 --port "$backend_port"
     ) >"$backend_log" 2>&1 &
     echo $! >"$backend_pid_file"
     backend_started=true
@@ -547,17 +590,18 @@ start_local() {
   if wants_superset; then
     start_managed_superset
     background_provision_superset_connection
-    if wait_for_http_ready "$SUPERSET_HEALTH_URL" 45 1; then
+    if wait_for_http_ready "$SUPERSET_HEALTH_URL" 120 1; then
       log "Superset is healthy at $SUPERSET_URL"
     else
-      log "Superset is still bootstrapping in the background. Open /bi/superset in a few moments if it is not ready immediately."
+      log "Superset failed to become healthy. See $RUNTIME_DIR/superset-native.log and $RUNTIME_DIR/superset-init.log."
+      return 1
     fi
   else
     clear_superset_runtime_state
   fi
 
   cleanup() {
-    if [[ "$cleanup_ran" == true ]]; then
+    if [[ "${cleanup_ran:-false}" == true ]]; then
       return 0
     fi
     cleanup_ran=true
@@ -575,7 +619,8 @@ start_local() {
     fi
   }
 
-  trap cleanup EXIT INT TERM
+  trap cleanup EXIT
+  trap 'exit 130' INT TERM
 
   log "Local platform is launching"
   log "Frontend: http://localhost:$frontend_port"
@@ -595,7 +640,9 @@ start_local() {
   fi
   log "Press Ctrl+C to stop local services, including Superset"
 
-  wait
+  while true; do
+    sleep 3600
+  done
 }
 
 print_usage() {

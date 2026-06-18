@@ -44,6 +44,13 @@ class SupersetRuntimeService:
         except json.JSONDecodeError:
             return {"mode": "unknown"}
 
+    def is_healthy(self, timeout: float = 2) -> bool:
+        try:
+            with urlopen(f"{self.settings.superset_url.rstrip('/')}/health", timeout=timeout) as response:
+                return 200 <= response.status < 400
+        except Exception:  # noqa: BLE001
+            return False
+
     def create_embed_ticket(self, *, user_id: str, next_path: str | None = None) -> str:
         ticket = secrets.token_urlsafe(32)
         self._prune_embed_tickets()
@@ -83,6 +90,10 @@ class SupersetRuntimeService:
         return default_target
 
     def login_browser_session(self, *, next_path: str | None = None) -> tuple[str, list[dict]]:
+        if not self.is_healthy():
+            raise RuntimeError(
+                "Superset is not running. Start DataWizz with ./run.sh and wait for the launcher to report that Superset is healthy."
+            )
         resolved_target = self.resolve_next_target(next_path)
         login_page_url = f"{self.settings.superset_url.rstrip('/')}/login/?next={quote(urlparse(resolved_target).path or '/superset/welcome/', safe='/%?=&')}"
         cookie_jar = CookieJar()
@@ -244,7 +255,7 @@ class SupersetRuntimeService:
                 return status
             env = os.environ.copy()
             env["SUPERSET_CONFIG_PATH"] = str(self.superset_config_path)
-            env["SUPERSET_SECRET_KEY"] = "internal-lakehouse-demo"
+            env["SUPERSET_SECRET_KEY"] = "datawizz-local-superset-demo-secret-2026"
             env["SUPERSET_HOME"] = str(self.superset_native_home)
             env["SUPERSET_NATIVE_DATABASE_URI"] = f"sqlite:///{self.superset_native_db}"
             command = command_prefix + [

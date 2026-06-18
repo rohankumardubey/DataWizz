@@ -90,7 +90,7 @@ export function SupersetSetupPage() {
         description="Run Superset as a managed DataWizz runtime and keep it inside the workspace experience instead of treating it like a separate demo tab."
         actions={
           <div className="flex flex-wrap gap-3">
-            <Button onClick={() => provisionMutation.mutate()} disabled={provisionMutation.isPending}>
+            <Button onClick={() => provisionMutation.mutate()} disabled={!integration?.reachable || provisionMutation.isPending}>
               {provisionMutation.isPending ? 'Provisioning Connection...' : (autoConnection?.provisioned ? 'Repair Superset Connection' : 'Auto-Provision Connection')}
             </Button>
             <Button tone="ghost" onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending}>
@@ -101,7 +101,7 @@ export function SupersetSetupPage() {
                 Refresh Embedded View
               </Button>
             ) : null}
-            {integration?.login?.ui_url ? (
+            {integration?.reachable && integration?.login?.ui_url ? (
               <Button tone="ghost" onClick={() => externalLaunchMutation.mutate()} disabled={externalLaunchMutation.isPending}>
                 {externalLaunchMutation.isPending ? 'Opening Superset...' : 'Open External Superset'}
               </Button>

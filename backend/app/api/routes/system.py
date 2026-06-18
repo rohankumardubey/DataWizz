@@ -354,6 +354,11 @@ def create_superset_embed_launch(
     next: str | None = Query(default="/superset/welcome/"),
     current_user: User = Depends(get_current_user),
 ) -> SupersetEmbedLaunchResponse:
+    if not superset_runtime_service.is_healthy():
+        raise HTTPException(
+            status_code=503,
+            detail="Superset is not ready. Start DataWizz with ./run.sh and wait for the launcher to report that Superset is healthy.",
+        )
     ticket = superset_runtime_service.create_embed_ticket(user_id=current_user.id, next_path=next)
     return SupersetEmbedLaunchResponse(
         launch_url=str(request.url_for("superset_embed_login")) + f"?ticket={ticket}"

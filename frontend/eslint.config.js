@@ -12,11 +12,17 @@ export default defineConfig([
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,
-      reactHooks.configs.flat.recommended,
+      reactHooks.configs['recommended-latest'],
       reactRefresh.configs.vite,
     ],
     languageOptions: {
       globals: globals.browser,
+    },
+  },
+  {
+    files: ['src/auth/auth-context.tsx', 'src/engine/engine-context.tsx', 'src/theme/theme-context.tsx'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
     },
   },
 ])
