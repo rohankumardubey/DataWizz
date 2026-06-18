@@ -213,6 +213,8 @@ Notes:
 
 - The backend targets PostgreSQL by default.
 - For quick local demos, the launcher can use SQLite-backed metadata automatically.
+- Superset is pinned to version `6.1.0`. On the first no-Docker launch, `run.sh` installs and initializes the native runtime before reporting it healthy; keep the launcher running until setup completes.
+- Later launches reuse the local `.superset-venv` and automatically verify the Superset health endpoint and provision the shared DataWizz DuckDB catalog.
 
 ### Frontend
 

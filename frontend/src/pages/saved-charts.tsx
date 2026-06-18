@@ -113,7 +113,7 @@ export function SavedChartsPage() {
     setEditColor(String(config.color ?? '#0b7285'))
     setEditFillColor(String(config.fillColor ?? '#d9f0f2'))
     setEditNumberFormat(String(config.numberFormat ?? 'number'))
-    setEditLegendMode(Boolean(config.showLegend ?? false) ? 'show' : 'hide')
+    setEditLegendMode(config.showLegend ? 'show' : 'hide')
     setEditKpiSubtitle(String(config.kpiSubtitle ?? ''))
     setEditKpiThresholdValue(String(config.kpiThresholdValue ?? ''))
     setEditKpiThresholdDirection(String(config.kpiThresholdDirection ?? '>='))

@@ -58,12 +58,12 @@ services:
       - "3000:80"
 
   superset:
-    image: apache/superset:latest
+    image: apache/superset:6.1.0
     profiles: ["superset"]
     depends_on:
       - postgres
     environment:
-      SUPERSET_SECRET_KEY: internal-lakehouse-demo
+      SUPERSET_SECRET_KEY: datawizz-local-superset-demo-secret-2026
       SUPERSET_CONFIG_PATH: /app/pythonpath/superset_config.py
       SUPERSET_ADMIN_USERNAME: admin
       SUPERSET_ADMIN_PASSWORD: admin
@@ -75,7 +75,7 @@ services:
       - ./storage:/datawizz-storage
     command: >
       /bin/sh -c "
-      pip install duckdb duckdb-engine &&
+      pip install duckdb==1.5.4 duckdb-engine==0.17.0 &&
       superset db upgrade &&
       superset fab create-admin
         --username $$SUPERSET_ADMIN_USERNAME

@@ -25,7 +25,7 @@ export function SqlWorkspacePage() {
   const [searchParams] = useSearchParams()
   const [sql, setSql] = useState(defaultSql)
   const [tableName, setTableName] = useState('sales_curated')
-  const [deltaMode, setDeltaMode] = useState('overwrite')
+  const [deltaMode, setDeltaMode] = useState<'overwrite' | 'append'>('overwrite')
   const [deltaMessage, setDeltaMessage] = useState<string | null>(null)
   const [queryError, setQueryError] = useState<string | null>(null)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
@@ -204,7 +204,7 @@ export function SqlWorkspacePage() {
             </div>
             <div>
               <Label>Write Mode</Label>
-              <Select value={deltaMode} onChange={(event) => setDeltaMode(event.target.value)} disabled={!canEdit}>
+              <Select value={deltaMode} onChange={(event) => setDeltaMode(event.target.value as 'overwrite' | 'append')} disabled={!canEdit}>
                 <option value="overwrite">overwrite</option>
                 <option value="append">append</option>
               </Select>
