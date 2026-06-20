@@ -18,8 +18,6 @@ class SupersetRuntimeService:
     def __init__(self) -> None:
         self.settings = get_settings()
         self.runtime_state_path = ROOT_DIR / ".runtime" / "superset-runtime.json"
-        self.native_venv_dir = ROOT_DIR / ".superset-venv"
-        self.native_superset_bin = self.native_venv_dir / "bin" / "superset"
         self.superset_config_path = ROOT_DIR / "docker" / "superset" / "superset_config.py"
         self.superset_native_home = ROOT_DIR / "storage" / "temp" / "superset" / "home"
         self.superset_native_db = ROOT_DIR / "storage" / "temp" / "superset" / "superset.db"
@@ -27,10 +25,13 @@ class SupersetRuntimeService:
         self._embed_tickets: dict[str, dict[str, str | float]] = {}
 
     def _native_superset_command(self) -> list[str] | None:
-        if self.native_superset_bin.exists():
-            return [str(self.native_superset_bin)]
+        runtime_state = self.read_runtime_state()
+        native_venv_dir = Path(runtime_state.get("native_venv") or ROOT_DIR / ".superset-venv")
+        native_superset_bin = native_venv_dir / "bin" / "superset"
+        if native_superset_bin.exists():
+            return [str(native_superset_bin)]
 
-        native_python = self.native_venv_dir / "bin" / "python"
+        native_python = native_venv_dir / "bin" / "python"
         if native_python.exists():
             return [str(native_python), "-m", "superset"]
 

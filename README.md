@@ -213,8 +213,9 @@ Notes:
 
 - The backend targets PostgreSQL by default.
 - For quick local demos, the launcher can use SQLite-backed metadata automatically.
-- Superset is pinned to version `6.1.0`. On the first no-Docker launch, `run.sh` installs and initializes the native runtime before reporting it healthy; keep the launcher running until setup completes.
-- Later launches reuse the local `.superset-venv` and automatically verify the Superset health endpoint and provision the shared DataWizz DuckDB catalog.
+- Superset is pinned to version `6.1.0`. On the first no-Docker launch, `run.sh` installs the native runtime in the machine-local DataWizz cache and initializes its metadata before reporting it healthy.
+- Later launches skip migrations and admin bootstrap, start the prepared runtime directly, verify the process and health endpoint, and provision the shared DuckDB catalog only when it is missing.
+- The native Superset package cache lives outside the repository (`${XDG_CACHE_HOME:-$HOME/.cache}/datawizz` by default), so cloud-synced workspaces and moved clones do not repeatedly download or slowly import hundreds of megabytes of Python packages. Set `DATAWIZZ_CACHE_DIR` to override it.
 
 ### Frontend
 
