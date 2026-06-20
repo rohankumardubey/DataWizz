@@ -307,11 +307,27 @@ LIMIT 10;
 
 ## Verification
 
-This repo has been locally verified with:
+Every pull request and push to `main` runs GitHub Actions checks for repository integrity, frontend lint/build, backend compilation and smoke tests, and Docker Compose configuration.
 
-- `python3 -m compileall backend/app backend/alembic`
-- `npm run build`
-- backend smoke checks for file upload, SQL execution, Delta writes, notebook runtime flows, pipelines, BI flows, and report scheduling
+Run the equivalent checks locally with:
+
+```bash
+./scripts/ci/check-repository.sh
+
+cd backend
+python -m compileall app alembic
+pytest -q
+
+cd ../frontend
+npm run lint
+npm run build
+
+cd ..
+docker compose config --quiet
+docker compose --profile superset config --quiet
+```
+
+The repository-integrity check specifically verifies that critical frontend library files are tracked and that relative frontend imports resolve from a clean checkout.
 
 ## Current MVP Notes
 
@@ -335,6 +351,7 @@ This repo has been locally verified with:
 - Engine Lab notebooks with DuckDB, PySpark, and DataFusion runtimes, saved snippets, collaboration basics, and persisted cell outputs
 - BI dataset explorer, chart builder, saved charts, dashboard builder and viewer, filters, and report scheduler with stored artifacts
 - Embedded Superset runtime with a shared serving catalog and auto-provisioned `DataWizz Serving Catalog` connection
+- Clean-clone CI gates for repository integrity, frontend build, backend smoke tests, and Compose validation
 
 ### Next
 
@@ -348,7 +365,7 @@ This repo has been locally verified with:
 - Row-level security and column masking
 - Semantic metrics layer
 - Alerts, subscriptions, and richer export delivery
-- CI/CD, monitoring, and Kubernetes deployment
+- Deployment automation, monitoring, and Kubernetes packaging
 
 ---
 
