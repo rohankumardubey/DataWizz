@@ -23,8 +23,6 @@ SUPERSET_DEFAULT_FIRSTNAME="Internal"
 SUPERSET_DEFAULT_LASTNAME="Admin"
 
 MODE="${1:-auto}"
-PROFILE="${2:-}"
-RESTART_FLAG="${3:-}"
 ARGS=("$@")
 
 mkdir -p "$RUNTIME_DIR"
@@ -176,6 +174,7 @@ wants_native_superset() {
 release_port() {
   local port="$1"
   local pids
+  local -a pid_list
 
   pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN | tr '\n' ' ' | xargs 2>/dev/null || true)"
   if [[ -z "$pids" ]]; then
@@ -184,14 +183,16 @@ release_port() {
 
   log "Port $port is in use. Stopping existing process(es): $pids"
   lsof -nP -iTCP:"$port" -sTCP:LISTEN || true
-  kill $pids >/dev/null 2>&1 || true
+  read -r -a pid_list <<<"$pids"
+  kill "${pid_list[@]}" >/dev/null 2>&1 || true
   sleep 1
 
   if port_in_use "$port"; then
     log "Force stopping remaining process(es) on port $port"
     pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN | tr '\n' ' ' | xargs 2>/dev/null || true)"
     if [[ -n "$pids" ]]; then
-      kill -9 $pids >/dev/null 2>&1 || true
+      read -r -a pid_list <<<"$pids"
+      kill -9 "${pid_list[@]}" >/dev/null 2>&1 || true
       sleep 1
     fi
   fi
@@ -263,6 +264,7 @@ ensure_native_superset() {
   local requested_spec="${SUPERSET_PIP_SPEC:-apache-superset==6.1.0}"
   local supplemental_packages="${SUPERSET_SUPPLEMENTAL_PACKAGES:-cachetools==7.1.4 duckdb==1.5.4 duckdb-engine==0.17.0}"
   local runtime_spec="$requested_spec|$supplemental_packages"
+  local -a supplemental_package_list
   local admin_marker="$RUNTIME_DIR/.superset-admin-created"
   local install_log="$RUNTIME_DIR/superset-install.log"
   local init_log="$RUNTIME_DIR/superset-init.log"
@@ -295,7 +297,8 @@ ensure_native_superset() {
       "$SUPERSET_VENV_DIR/bin/python" -m pip install --upgrade pip setuptools wheel
       "$SUPERSET_VENV_DIR/bin/python" -m pip install "$requested_spec"
       if [[ -n "$supplemental_packages" ]]; then
-        "$SUPERSET_VENV_DIR/bin/python" -m pip install $supplemental_packages
+        read -r -a supplemental_package_list <<<"$supplemental_packages"
+        "$SUPERSET_VENV_DIR/bin/python" -m pip install "${supplemental_package_list[@]}"
       fi
       printf '%s' "$runtime_spec" >"$version_marker"
       touch "$deps_marker"
@@ -416,6 +419,7 @@ background_provision_superset_connection() {
     fi
 
     cd "$BACKEND_DIR"
+    # shellcheck disable=SC1091
     source .venv/bin/activate
     python - <<'PY'
 from app.services.superset_runtime_service import superset_runtime_service
@@ -493,6 +497,7 @@ ensure_backend_env() {
     log "Installing backend dependencies"
     (
       cd "$BACKEND_DIR"
+      # shellcheck disable=SC1091
       source .venv/bin/activate
       pip install -e '.[dev]'
       touch .venv/.deps-installed
@@ -569,6 +574,7 @@ start_local() {
     log "Starting backend on http://localhost:$backend_port using SQLite for local demo mode"
     (
       cd "$BACKEND_DIR"
+      # shellcheck disable=SC1091
       source .venv/bin/activate
       DATABASE_URL=sqlite:///./local.db \
         uvicorn app.main:app --reload --reload-dir app --reload-dir alembic --host 0.0.0.0 --port "$backend_port"

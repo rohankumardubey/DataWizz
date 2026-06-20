@@ -134,6 +134,18 @@ Optional Superset integration is documented, but not required for the in-app MVP
 - OpenLineage event emission
 - Trino or Nessie integration for richer lakehouse metadata
 
+## Delivery and Portability Checks
+
+GitHub Actions validates the repository as a clean checkout before changes reach `main`:
+
+- critical source files must exist and be tracked
+- relative React/TypeScript imports must resolve
+- frontend lint and production build must complete
+- FastAPI must compile and pass a temporary-SQLite startup/login smoke test
+- core and Superset Docker Compose profiles must parse successfully
+
+The same repository-integrity check is available locally through `./scripts/ci/check-repository.sh`.
+
 ## MVP Boundaries
 
 Included in this first version:
