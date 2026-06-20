@@ -6,15 +6,20 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/frontend"
 RUNTIME_DIR="$ROOT_DIR/.runtime"
-SUPERSET_VENV_DIR="$ROOT_DIR/.superset-venv"
+DATAWIZZ_CACHE_DIR="${DATAWIZZ_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/datawizz}"
+SUPERSET_VENV_DIR="${SUPERSET_VENV_DIR:-$DATAWIZZ_CACHE_DIR/superset/6.1.0/venv}"
 SUPERSET_NATIVE_HOME="$ROOT_DIR/storage/temp/superset/home"
 SUPERSET_NATIVE_DB="$ROOT_DIR/storage/temp/superset/superset.db"
 SUPERSET_CONFIG_FILE="$ROOT_DIR/docker/superset/superset_config.py"
 SUPERSET_RUNTIME_STATE_FILE="$RUNTIME_DIR/superset-runtime.json"
 SUPERSET_NATIVE_PID_FILE="$RUNTIME_DIR/superset-native.pid"
 SUPERSET_PROVISION_PID_FILE="$RUNTIME_DIR/superset-provision.pid"
+SUPERSET_PREPARED_MARKER="$SUPERSET_NATIVE_HOME/.datawizz-prepared"
 SUPERSET_URL="http://localhost:8088"
 SUPERSET_HEALTH_URL="$SUPERSET_URL/health"
+SUPERSET_PIP_SPEC="${SUPERSET_PIP_SPEC:-apache-superset==6.1.0}"
+SUPERSET_SUPPLEMENTAL_PACKAGES="${SUPERSET_SUPPLEMENTAL_PACKAGES:-cachetools==7.1.4 duckdb==1.5.4 duckdb-engine==0.17.0}"
+SUPERSET_BOOTSTRAP_VERSION="2"
 SUPERSET_SECRET_KEY_VALUE="datawizz-local-superset-demo-secret-2026"
 SUPERSET_DEFAULT_USERNAME="admin"
 SUPERSET_DEFAULT_PASSWORD="admin"
@@ -33,10 +38,13 @@ log() {
 
 write_superset_runtime_state() {
   local mode="$1"
+  local status="${2:-starting}"
   cat >"$SUPERSET_RUNTIME_STATE_FILE" <<EOF
 {
   "mode": "$mode",
+  "status": "$status",
   "superset_url": "$SUPERSET_URL",
+  "native_venv": "$SUPERSET_VENV_DIR",
   "updated_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 }
 EOF
@@ -135,6 +143,28 @@ wait_for_http_ready() {
   for _ in $(seq 1 "$attempts"); do
     if http_ready "$url"; then
       return 0
+    fi
+    sleep "$delay"
+  done
+
+  return 1
+}
+
+wait_for_process_http_ready() {
+  local url="$1"
+  local pid_file="$2"
+  local attempts="${3:-60}"
+  local delay="${4:-1}"
+  local pid
+
+  for _ in $(seq 1 "$attempts"); do
+    if http_ready "$url"; then
+      return 0
+    fi
+
+    pid="$(cat "$pid_file" 2>/dev/null || true)"
+    if [[ -z "$pid" ]] || ! pid_is_running "$pid"; then
+      return 2
     fi
     sleep "$delay"
   done
@@ -250,75 +280,120 @@ superset_venv_matches_workspace() {
 
 superset_packages_ready() {
   [[ -x "$SUPERSET_VENV_DIR/bin/python" ]] || return 1
-  "$SUPERSET_VENV_DIR/bin/python" -c 'import superset, cachetools, duckdb, duckdb_engine' >/dev/null 2>&1
+  "$SUPERSET_VENV_DIR/bin/python" - "$SUPERSET_PIP_SPEC" "$SUPERSET_SUPPLEMENTAL_PACKAGES" <<'PY' >/dev/null 2>&1
+import re
+import sys
+from importlib.metadata import PackageNotFoundError, version
+
+requirements = [sys.argv[1], *sys.argv[2].split()]
+for requirement in requirements:
+    match = re.fullmatch(r"([A-Za-z0-9_.-]+)==([^; ]+)", requirement)
+    if match is None:
+        raise SystemExit(1)
+    try:
+        installed = version(match.group(1))
+    except PackageNotFoundError:
+        raise SystemExit(1)
+    if installed != match.group(2):
+        raise SystemExit(1)
+PY
 }
 
 superset_admin_exists() {
   "$SUPERSET_VENV_DIR/bin/superset" fab list-users 2>/dev/null | grep -q "^username:${SUPERSET_DEFAULT_USERNAME}\\b"
 }
 
+superset_runtime_spec() {
+  printf '%s|%s' "$SUPERSET_PIP_SPEC" "$SUPERSET_SUPPLEMENTAL_PACKAGES"
+}
+
+superset_bootstrap_spec() {
+  printf '%s|bootstrap=%s' "$(superset_runtime_spec)" "$SUPERSET_BOOTSTRAP_VERSION"
+}
+
+superset_metadata_ready() {
+  [[ -s "$SUPERSET_NATIVE_DB" ]] || return 1
+  [[ -f "$SUPERSET_PREPARED_MARKER" ]] || return 1
+  [[ "$(cat "$SUPERSET_PREPARED_MARKER" 2>/dev/null || true)" == "$(superset_bootstrap_spec)" ]]
+}
+
+install_native_superset_packages() {
+  local install_log="$1"
+  local -a supplemental_package_list
+
+  read -r -a supplemental_package_list <<<"$SUPERSET_SUPPLEMENTAL_PACKAGES"
+  if command_exists uv; then
+    log "Installing the cached Superset runtime with uv"
+    uv pip install \
+      --python "$SUPERSET_VENV_DIR/bin/python" \
+      "$SUPERSET_PIP_SPEC" \
+      "${supplemental_package_list[@]}" 2>&1 | tee "$install_log"
+  else
+    log "Installing the cached Superset runtime with pip"
+    (
+      "$SUPERSET_VENV_DIR/bin/python" -m pip install --upgrade pip setuptools wheel
+      "$SUPERSET_VENV_DIR/bin/python" -m pip install \
+        "$SUPERSET_PIP_SPEC" \
+        "${supplemental_package_list[@]}"
+    ) 2>&1 | tee "$install_log"
+  fi
+}
+
 ensure_native_superset() {
   local superset_python
   local deps_marker="$SUPERSET_VENV_DIR/.deps-installed"
   local version_marker="$SUPERSET_VENV_DIR/.superset-version"
-  local requested_spec="${SUPERSET_PIP_SPEC:-apache-superset==6.1.0}"
-  local supplemental_packages="${SUPERSET_SUPPLEMENTAL_PACKAGES:-cachetools==7.1.4 duckdb==1.5.4 duckdb-engine==0.17.0}"
-  local runtime_spec="$requested_spec|$supplemental_packages"
-  local -a supplemental_package_list
+  local runtime_spec
+  local bootstrap_spec
   local admin_marker="$RUNTIME_DIR/.superset-admin-created"
   local install_log="$RUNTIME_DIR/superset-install.log"
   local init_log="$RUNTIME_DIR/superset-init.log"
 
+  runtime_spec="$(superset_runtime_spec)"
+  bootstrap_spec="$(superset_bootstrap_spec)"
   superset_python="$(pick_superset_python)" || {
     log "Superset native mode requires Python 3.11+ on PATH. Set SUPERSET_PYTHON_BIN if you want to force a specific interpreter."
     exit 1
   }
 
-  mkdir -p "$SUPERSET_NATIVE_HOME" "$(dirname "$SUPERSET_NATIVE_DB")"
+  mkdir -p "$SUPERSET_NATIVE_HOME" "$(dirname "$SUPERSET_NATIVE_DB")" "$(dirname "$SUPERSET_VENV_DIR")"
 
   if [[ -d "$SUPERSET_VENV_DIR" ]] && ! superset_venv_matches_workspace; then
-    log "Rebuilding stale Superset virtual environment because the workspace path changed"
+    log "Rebuilding an invalid cached Superset virtual environment"
     rm -rf "$SUPERSET_VENV_DIR"
   fi
 
   if [[ ! -d "$SUPERSET_VENV_DIR" ]]; then
-    log "Creating native Superset virtual environment with $superset_python"
-    "$superset_python" -m venv "$SUPERSET_VENV_DIR"
-  fi
-
-  if superset_packages_ready; then
-    [[ -f "$deps_marker" ]] || touch "$deps_marker"
-    [[ -f "$version_marker" ]] || printf '%s' "$runtime_spec" >"$version_marker"
+    log "Creating a machine-local Superset cache outside the synced repository"
+    if command_exists uv; then
+      uv venv --python "$superset_python" "$SUPERSET_VENV_DIR" >"$install_log" 2>&1
+    else
+      "$superset_python" -m venv "$SUPERSET_VENV_DIR"
+    fi
   fi
 
   if ! superset_packages_ready || [[ "$(cat "$version_marker" 2>/dev/null || true)" != "$runtime_spec" ]]; then
-    log "Installing native Superset runtime ($requested_spec)"
-    (
-      "$SUPERSET_VENV_DIR/bin/python" -m pip install --upgrade pip setuptools wheel
-      "$SUPERSET_VENV_DIR/bin/python" -m pip install "$requested_spec"
-      if [[ -n "$supplemental_packages" ]]; then
-        read -r -a supplemental_package_list <<<"$supplemental_packages"
-        "$SUPERSET_VENV_DIR/bin/python" -m pip install "${supplemental_package_list[@]}"
-      fi
-      printf '%s' "$runtime_spec" >"$version_marker"
-      touch "$deps_marker"
-    ) >"$install_log" 2>&1 || {
+    log "Preparing native Superset packages ($SUPERSET_PIP_SPEC)"
+    install_native_superset_packages "$install_log" || {
       log "Native Superset installation failed. See $install_log"
       exit 1
     }
+    printf '%s' "$runtime_spec" >"$version_marker"
+    touch "$deps_marker"
   fi
 
-  if ! "$SUPERSET_VENV_DIR/bin/python" -c 'import cachetools, duckdb, duckdb_engine' >/dev/null 2>&1; then
-    log "Repairing native Superset runtime dependencies"
-    (
-      "$SUPERSET_VENV_DIR/bin/python" -m pip install cachetools duckdb duckdb-engine
-    ) >>"$install_log" 2>&1 || {
-      log "Native Superset dependency repair failed. See $install_log"
-      exit 1
-    }
+  if superset_metadata_ready && [[ "${SUPERSET_REINITIALIZE:-0}" != "1" ]]; then
+    log "Superset is already prepared; skipping migrations and admin bootstrap"
+    return 0
   fi
 
-  log "Preparing native Superset metadata and admin bootstrap"
+  if [[ ! -f "$SUPERSET_PREPARED_MARKER" && -s "$SUPERSET_NATIVE_DB" && -f "$admin_marker" && "${SUPERSET_REINITIALIZE:-0}" != "1" ]]; then
+    log "Adopting the existing initialized Superset metadata"
+    printf '%s' "$bootstrap_spec" >"$SUPERSET_PREPARED_MARKER"
+    return 0
+  fi
+
+  log "Running one-time Superset metadata and admin bootstrap"
   (
     with_superset_env
     "$SUPERSET_VENV_DIR/bin/superset" db upgrade
@@ -336,6 +411,7 @@ ensure_native_superset() {
     fi
     touch "$admin_marker"
     "$SUPERSET_VENV_DIR/bin/superset" init
+    printf '%s' "$bootstrap_spec" >"$SUPERSET_PREPARED_MARKER"
   ) >"$init_log" 2>&1 || {
     log "Native Superset initialization failed. See $init_log"
     exit 1
@@ -361,10 +437,12 @@ start_superset_sidecar() {
 
 start_native_superset() {
   local superset_log="$RUNTIME_DIR/superset-native.log"
-  write_superset_runtime_state "native"
+  local ready_status
+  write_superset_runtime_state "native" "preparing"
 
   if http_ready "$SUPERSET_HEALTH_URL"; then
     log "Superset already reachable at $SUPERSET_URL. Reusing existing runtime."
+    write_superset_runtime_state "native" "healthy"
     return 0
   fi
 
@@ -372,19 +450,45 @@ start_native_superset() {
     stop_pid_from_file "$SUPERSET_NATIVE_PID_FILE" "stale native Superset bootstrap"
   fi
 
-  log "Preparing native Superset before launch"
-  log "The first run installs a pinned Superset runtime and can take several minutes. Keep this launcher running until setup completes."
   ensure_native_superset
 
   log "Launching native Superset on $SUPERSET_URL"
+  : >"$superset_log"
   (
     with_superset_env
-    exec "$SUPERSET_VENV_DIR/bin/superset" run -h 0.0.0.0 -p 8088
+    exec "$SUPERSET_VENV_DIR/bin/gunicorn" \
+      --bind 0.0.0.0:8088 \
+      --workers 1 \
+      --threads 4 \
+      --timeout 120 \
+      --access-logfile - \
+      --error-logfile - \
+      "superset.app:create_app()"
   ) >"$superset_log" 2>&1 &
   echo $! >"$SUPERSET_NATIVE_PID_FILE"
+  write_superset_runtime_state "native" "starting"
   log "Native Superset log: $superset_log"
-  log "Superset install log: $RUNTIME_DIR/superset-install.log"
-  log "Superset init log: $RUNTIME_DIR/superset-init.log"
+
+  if wait_for_process_http_ready "$SUPERSET_HEALTH_URL" "$SUPERSET_NATIVE_PID_FILE" 60 1; then
+    ready_status=0
+  else
+    ready_status=$?
+  fi
+  if [[ "$ready_status" -eq 0 ]]; then
+    write_superset_runtime_state "native" "healthy"
+    log "Superset is healthy at $SUPERSET_URL"
+    return 0
+  fi
+
+  write_superset_runtime_state "native" "failed"
+  if [[ "$ready_status" -eq 2 ]]; then
+    log "Superset exited before becoming healthy. Last log lines:"
+  else
+    log "Superset did not become healthy within 60 seconds. Last log lines:"
+  fi
+  tail -40 "$superset_log" || true
+  stop_pid_from_file "$SUPERSET_NATIVE_PID_FILE" "failed native Superset"
+  return 1
 }
 
 start_managed_superset() {
@@ -421,12 +525,14 @@ background_provision_superset_connection() {
     cd "$BACKEND_DIR"
     # shellcheck disable=SC1091
     source .venv/bin/activate
-    python - <<'PY'
+python - <<'PY'
 from app.services.superset_runtime_service import superset_runtime_service
 
-result = superset_runtime_service.provision_serving_catalog_connection()
+result = superset_runtime_service.get_connection_status()
+if not result.get("provisioned"):
+    result = superset_runtime_service.provision_serving_catalog_connection()
 print(result)
-if not result.get("command_succeeded"):
+if not result.get("provisioned"):
     raise SystemExit(1)
 PY
   ) >"$provision_log" 2>&1 &
@@ -546,6 +652,28 @@ start_local() {
   local frontend_started=false
   local cleanup_ran=false
 
+  cleanup() {
+    if [[ "${cleanup_ran:-false}" == true ]]; then
+      return 0
+    fi
+    cleanup_ran=true
+    log "Stopping local services"
+    if [[ "${backend_started:-false}" == true && -f "$backend_pid_file" ]]; then
+      kill "$(cat "$backend_pid_file")" >/dev/null 2>&1 || true
+      rm -f "$backend_pid_file"
+    fi
+    if [[ "${frontend_started:-false}" == true && -f "$frontend_pid_file" ]]; then
+      kill "$(cat "$frontend_pid_file")" >/dev/null 2>&1 || true
+      rm -f "$frontend_pid_file"
+    fi
+    if wants_superset; then
+      stop_managed_superset
+    fi
+  }
+
+  trap cleanup EXIT
+  trap 'exit 130' INT TERM
+
   if should_force_restart; then
     log "Force restart requested. Releasing local ports before launch."
     release_port "$backend_port"
@@ -596,37 +724,13 @@ start_local() {
   if wants_superset; then
     start_managed_superset
     background_provision_superset_connection
-    if wait_for_http_ready "$SUPERSET_HEALTH_URL" 120 1; then
-      log "Superset is healthy at $SUPERSET_URL"
-    else
+    if ! http_ready "$SUPERSET_HEALTH_URL" && ! wait_for_http_ready "$SUPERSET_HEALTH_URL" 120 1; then
       log "Superset failed to become healthy. See $RUNTIME_DIR/superset-native.log and $RUNTIME_DIR/superset-init.log."
       return 1
     fi
   else
     clear_superset_runtime_state
   fi
-
-  cleanup() {
-    if [[ "${cleanup_ran:-false}" == true ]]; then
-      return 0
-    fi
-    cleanup_ran=true
-    log "Stopping local services"
-    if [[ "${backend_started:-false}" == true && -f "$backend_pid_file" ]]; then
-      kill "$(cat "$backend_pid_file")" >/dev/null 2>&1 || true
-      rm -f "$backend_pid_file"
-    fi
-    if [[ "${frontend_started:-false}" == true && -f "$frontend_pid_file" ]]; then
-      kill "$(cat "$frontend_pid_file")" >/dev/null 2>&1 || true
-      rm -f "$frontend_pid_file"
-    fi
-    if wants_superset; then
-      stop_managed_superset
-    fi
-  }
-
-  trap cleanup EXIT
-  trap 'exit 130' INT TERM
 
   log "Local platform is launching"
   log "Frontend: http://localhost:$frontend_port"
