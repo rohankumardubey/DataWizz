@@ -11,12 +11,15 @@ from app.schemas.tables import (
     DeltaTableMetadataUpdateRequest,
     DeltaTablePreviewResponse,
     DeltaTableRead,
+    QualityRunResponse,
+    QualitySuiteUpdateRequest,
 )
 from app.services.catalog_governance_service import catalog_governance_service
 from app.services.catalog_lineage_service import catalog_lineage_service
 from app.services.catalog_metadata_service import CatalogMetadataService
 from app.services.delta_service import DeltaService
 from app.services.duckdb_service import DuckDBService
+from app.services.data_quality_service import data_quality_service
 from app.services.superset_catalog_service import superset_catalog_service
 
 
@@ -116,3 +119,36 @@ def refresh_table_metadata(table_id: str, db: Session = Depends(get_db)) -> Delt
         catalog_governance_service.build_score(refreshed, enriched, lineage),
     )
     return DeltaTableRead.model_validate(governed)
+
+
+@router.put("/{table_id}/quality-suite", response_model=DeltaTableRead, dependencies=[Depends(require_roles("admin", "analyst"))])
+def update_quality_suite(table_id: str, payload: QualitySuiteUpdateRequest, db: Session = Depends(get_db)) -> DeltaTableRead:
+    table = db.query(DeltaTable).filter(DeltaTable.id == table_id).one_or_none()
+    if table is None:
+        raise HTTPException(status_code=404, detail="Delta table not found")
+    enriched = catalog_metadata_service.update_quality_suite(
+        table,
+        name=payload.name,
+        expectations=[expectation.model_dump() for expectation in payload.expectations],
+    )
+    lineage = catalog_lineage_service.build_table_lineage(db, table)
+    governed = catalog_metadata_service.attach_governance(
+        enriched,
+        catalog_governance_service.build_score(table, enriched, lineage),
+    )
+    return DeltaTableRead.model_validate(governed)
+
+
+@router.post("/{table_id}/quality-runs", response_model=QualityRunResponse, dependencies=[Depends(require_roles("admin", "analyst"))])
+def run_quality_suite(table_id: str, db: Session = Depends(get_db)) -> QualityRunResponse:
+    table = db.query(DeltaTable).filter(DeltaTable.id == table_id).one_or_none()
+    if table is None:
+        raise HTTPException(status_code=404, detail="Delta table not found")
+    suite = catalog_metadata_service.get_quality_suite(table)
+    result = data_quality_service.run(
+        table,
+        suite["quality_expectations"],
+        suite_name=suite["quality_suite_name"],
+    )
+    catalog_metadata_service.record_quality_run(table, result)
+    return QualityRunResponse.model_validate(result)

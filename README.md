@@ -348,6 +348,7 @@ The repository-integrity check specifically verifies that critical frontend libr
 - File Explorer drag-and-drop uploads, schema and row preview, deep column profiling, and profile-driven recommendations
 - SQL Workspace querying, export, and Delta publishing backed by DuckDB
 - Catalog governance editing, quality and freshness signals, data contract guardrails, lineage relationships, and mini lineage graph drill-down
+- Curated-table quality suites with minimum-row, not-null, uniqueness, and accepted-value expectations plus persisted run evidence
 - Visual pipeline builder validation, join and aggregation guardrails, retries, logs filtering, and recurring scheduler execution
 - Engine Lab notebooks with DuckDB, PySpark, and DataFusion runtimes, saved snippets, collaboration basics, and persisted cell outputs
 - BI dataset explorer, chart builder, saved charts, dashboard builder and viewer, filters, and report scheduler with stored artifacts
@@ -357,7 +358,7 @@ The repository-integrity check specifically verifies that critical frontend libr
 ### Next
 
 - Flink streaming support
-- Great Expectations quality checks
+- Great Expectations adapter, scheduled quality runs, and pipeline quality gates
 - OpenLineage integration
 - Hive Metastore or Nessie-backed catalog options
 - Notebook export artifacts and richer collaboration flows

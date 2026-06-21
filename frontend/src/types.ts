@@ -76,6 +76,43 @@ export type FilePreview = {
   recommendations: FileRecommendations
 }
 
+export type QualityExpectation = {
+  id: string
+  expectation_type: 'row_count_between' | 'not_null' | 'unique' | 'accepted_values'
+  enabled: boolean
+  severity: 'warning' | 'error'
+  column?: string | null
+  min_value?: number | null
+  max_value?: number | null
+  accepted_values?: string[] | null
+}
+
+export type QualityExpectationResult = {
+  id: string
+  expectation_type: QualityExpectation['expectation_type']
+  column?: string | null
+  severity: 'warning' | 'error'
+  success: boolean
+  observed_value?: unknown
+  unexpected_count: number
+  unexpected_percent: number
+  detail: string
+}
+
+export type QualityRun = {
+  table_id: string
+  suite_name: string
+  status: 'passed' | 'warning' | 'failed'
+  success: boolean
+  row_count: number
+  expectation_count: number
+  passed_count: number
+  failed_count: number
+  summary: string
+  run_at: string
+  results: QualityExpectationResult[]
+}
+
 export type DeltaTable = {
   id: string
   name: string
@@ -116,6 +153,12 @@ export type DeltaTable = {
   contract_last_check_summary?: string
   contract_last_check_issues?: string[]
   contract_last_check_at?: string | null
+  quality_suite_name?: string
+  quality_expectations?: QualityExpectation[]
+  quality_last_run_status?: 'passed' | 'warning' | 'failed' | 'untracked'
+  quality_last_run_summary?: string
+  quality_last_run_at?: string | null
+  quality_last_run_results?: QualityExpectationResult[]
   created_at: string
   updated_at: string
 }

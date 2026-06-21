@@ -1,20 +1,3 @@
-import os
-import tempfile
-from pathlib import Path
-
-
-TEST_ROOT = Path(tempfile.mkdtemp(prefix="datawizz-ci-"))
-os.environ.update(
-    {
-        "DATABASE_URL": f"sqlite:///{TEST_ROOT / 'metadata.db'}",
-        "RAW_STORAGE_PATH": str(TEST_ROOT / "raw"),
-        "CURATED_STORAGE_PATH": str(TEST_ROOT / "curated"),
-        "SERVING_STORAGE_PATH": str(TEST_ROOT / "serving"),
-        "TEMP_STORAGE_PATH": str(TEST_ROOT / "temp"),
-        "SCHEDULER_ENABLED": "false",
-    }
-)
-
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
@@ -41,4 +24,3 @@ def test_health_and_seeded_admin_login() -> None:
         )
         assert me.status_code == 200
         assert me.json()["email"] == "admin@datawizz.local"
-

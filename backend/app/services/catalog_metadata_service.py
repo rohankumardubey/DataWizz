@@ -61,6 +61,25 @@ class CatalogMetadataService:
             "contract_last_check_at": None,
         }
 
+    def _default_quality_suite(self, table: DeltaTable) -> dict:
+        return {
+            "quality_suite_name": f"{table.schema_name}.{table.name} baseline",
+            "quality_expectations": [
+                {
+                    "id": "minimum-row-count",
+                    "expectation_type": "row_count_between",
+                    "enabled": True,
+                    "severity": "error",
+                    "min_value": 1,
+                    "max_value": None,
+                }
+            ],
+            "quality_last_run_status": "untracked",
+            "quality_last_run_summary": "Quality suite has not been run yet.",
+            "quality_last_run_at": None,
+            "quality_last_run_results": [],
+        }
+
     def get_contract(self, table: DeltaTable) -> dict:
         registry = self._load_registry()
         stored = registry.get(table.id, {})
@@ -113,7 +132,44 @@ class CatalogMetadataService:
             "lineage_hint": stored.get("lineage_hint") or self._default_lineage_hint(table),
         }
         payload.update(self.get_contract(table))
+        payload.update(self.get_quality_suite(table))
         return payload
+
+    def get_quality_suite(self, table: DeltaTable) -> dict:
+        registry = self._load_registry()
+        stored = registry.get(table.id, {})
+        defaults = self._default_quality_suite(table)
+        return {
+            "quality_suite_name": stored.get("quality_suite_name", defaults["quality_suite_name"]),
+            "quality_expectations": stored.get("quality_expectations", defaults["quality_expectations"]),
+            "quality_last_run_status": stored.get("quality_last_run_status", defaults["quality_last_run_status"]),
+            "quality_last_run_summary": stored.get("quality_last_run_summary", defaults["quality_last_run_summary"]),
+            "quality_last_run_at": stored.get("quality_last_run_at", defaults["quality_last_run_at"]),
+            "quality_last_run_results": stored.get("quality_last_run_results", defaults["quality_last_run_results"]),
+        }
+
+    def update_quality_suite(self, table: DeltaTable, *, name: str, expectations: list[dict]) -> dict:
+        registry = self._load_registry()
+        current = registry.get(table.id, {})
+        current["quality_suite_name"] = name.strip() or f"{table.schema_name}.{table.name} baseline"
+        current["quality_expectations"] = expectations
+        current["quality_last_run_status"] = "untracked"
+        current["quality_last_run_summary"] = "Quality suite changed and needs to be run."
+        current["quality_last_run_at"] = None
+        current["quality_last_run_results"] = []
+        registry[table.id] = current
+        self._save_registry(registry)
+        return self.enrich_table(table)
+
+    def record_quality_run(self, table: DeltaTable, result: dict) -> None:
+        registry = self._load_registry()
+        current = registry.get(table.id, {})
+        current["quality_last_run_status"] = result.get("status", "failed")
+        current["quality_last_run_summary"] = result.get("summary", "Quality checks completed.")
+        current["quality_last_run_at"] = result.get("run_at") or datetime.now(timezone.utc).isoformat()
+        current["quality_last_run_results"] = list(result.get("results") or [])
+        registry[table.id] = current
+        self._save_registry(registry)
 
     def enrich_table(self, table: DeltaTable) -> dict:
         payload = {
