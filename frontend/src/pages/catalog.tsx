@@ -71,6 +71,17 @@ function contractCheckTone(status?: string) {
   return 'bg-slate-100 text-slate-700'
 }
 
+function qualityTone(status?: string) {
+  if (status === 'passed') return 'bg-emerald-50 text-emerald-700'
+  if (status === 'warning') return 'bg-amber-50 text-amber-700'
+  if (status === 'failed') return 'bg-rose-50 text-rose-700'
+  return 'bg-slate-100 text-slate-700'
+}
+
+function commaSeparatedValues(value: string) {
+  return Array.from(new Set(value.split(',').map((item) => item.trim()).filter(Boolean)))
+}
+
 export function CatalogPage() {
   const { hasAnyRole } = useAuth()
   const canEdit = hasAnyRole('admin', 'analyst')
@@ -89,6 +100,10 @@ export function CatalogPage() {
   const [contractAllowAdditiveDraft, setContractAllowAdditiveDraft] = useState(true)
   const [contractAllowRemovalDraft, setContractAllowRemovalDraft] = useState(false)
   const [contractAllowTypeDraft, setContractAllowTypeDraft] = useState(false)
+  const [qualitySuiteNameDraft, setQualitySuiteNameDraft] = useState('')
+  const [qualityMinRowsDraft, setQualityMinRowsDraft] = useState('1')
+  const [qualityNotNullDraft, setQualityNotNullDraft] = useState('')
+  const [qualityUniqueDraft, setQualityUniqueDraft] = useState('')
   const [lineageFocus, setLineageFocus] = useState<LineageFocus>('upstream')
   const [statusMessage, setStatusMessage] = useState('Select a curated table to inspect governance metadata, ownership, freshness, and lineage hints.')
   const appliedSearchTableIdRef = useRef<string | null>(null)
@@ -148,8 +163,65 @@ export function CatalogPage() {
     },
     onError: (error: Error) => setStatusMessage(error.message),
   })
+  const updateQualitySuiteMutation = useMutation({
+    mutationFn: async (payload: {
+      tableId: string
+      name: string
+      minRows: number
+      notNullColumns: string[]
+      uniqueColumns: string[]
+    }) => {
+      const existingAcceptedValueRules =
+        tables
+          .find((table) => table.id === payload.tableId)
+          ?.quality_expectations?.filter((expectation) => expectation.expectation_type === 'accepted_values') ?? []
+      return api.updateTableQualitySuite(payload.tableId, {
+        name: payload.name,
+        expectations: [
+          {
+            id: 'minimum-row-count',
+            expectation_type: 'row_count_between',
+            enabled: true,
+            severity: 'error',
+            min_value: payload.minRows,
+            max_value: null,
+          },
+          ...payload.notNullColumns.map((column) => ({
+            id: `not-null-${column}`,
+            expectation_type: 'not_null' as const,
+            enabled: true,
+            severity: 'error' as const,
+            column,
+          })),
+          ...payload.uniqueColumns.map((column) => ({
+            id: `unique-${column}`,
+            expectation_type: 'unique' as const,
+            enabled: true,
+            severity: 'warning' as const,
+            column,
+          })),
+          ...existingAcceptedValueRules,
+        ],
+      })
+    },
+    onSuccess: (table) => {
+      queryClient.invalidateQueries({ queryKey: ['tables'] })
+      queryClient.invalidateQueries({ queryKey: ['tables', table.id, 'preview'] })
+      setStatusMessage(`Saved quality suite for ${table.schema_name}.${table.name}. Run it to collect fresh evidence.`)
+    },
+    onError: (error: Error) => setStatusMessage(error.message),
+  })
+  const runQualitySuiteMutation = useMutation({
+    mutationFn: api.runTableQualitySuite,
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['tables'] })
+      queryClient.invalidateQueries({ queryKey: ['tables', result.table_id, 'preview'] })
+      setStatusMessage(`${result.suite_name}: ${result.summary}`)
+    },
+    onError: (error: Error) => setStatusMessage(error.message),
+  })
 
-  const tables = tablesQuery.data?.items ?? []
+  const tables = useMemo(() => tablesQuery.data?.items ?? [], [tablesQuery.data?.items])
 
   useEffect(() => {
     const requestedTableId = searchParams.get('tableId')
@@ -230,6 +302,27 @@ export function CatalogPage() {
     setContractAllowAdditiveDraft(selectedTable.contract_allow_additive_columns ?? true)
     setContractAllowRemovalDraft(selectedTable.contract_allow_column_removal ?? false)
     setContractAllowTypeDraft(selectedTable.contract_allow_type_changes ?? false)
+    setQualitySuiteNameDraft(selectedTable.quality_suite_name ?? `${selectedTable.schema_name}.${selectedTable.name} baseline`)
+    setQualityMinRowsDraft(
+      String(
+        selectedTable.quality_expectations?.find((expectation) => expectation.expectation_type === 'row_count_between')
+          ?.min_value ?? 1,
+      ),
+    )
+    setQualityNotNullDraft(
+      (selectedTable.quality_expectations ?? [])
+        .filter((expectation) => expectation.expectation_type === 'not_null')
+        .map((expectation) => expectation.column)
+        .filter(Boolean)
+        .join(', '),
+    )
+    setQualityUniqueDraft(
+      (selectedTable.quality_expectations ?? [])
+        .filter((expectation) => expectation.expectation_type === 'unique')
+        .map((expectation) => expectation.column)
+        .filter(Boolean)
+        .join(', '),
+    )
     setStatusMessage(`Inspecting ${selectedTable.schema_name}.${selectedTable.name}.`)
   }, [selectedTableId, selectedTable])
 
@@ -846,6 +939,160 @@ export function CatalogPage() {
                         <div className={cn('rounded-2xl p-4 text-sm', theme === 'dark' ? 'bg-white/[0.03] text-white/70' : 'bg-slate-50 text-slate-700')}>
                           Your current role can inspect contract state, but only analysts and admins can update table guardrails.
                         </div>
+                      )}
+                    </div>
+                  </div>
+                </Panel>
+
+                <Panel className="space-y-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate/55">Data Quality Suite</p>
+                      <h3 className="mt-2 font-display text-2xl text-ink">Reusable Expectations and Run Evidence</h3>
+                      <p className="mt-3 max-w-3xl text-sm leading-6 text-slate/70">
+                        Define a baseline row-volume check plus required and unique columns. Runs execute directly against the current Delta snapshot and retain evidence for the latest result.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${qualityTone(selectedTable.quality_last_run_status)}`}>
+                        {selectedTable.quality_last_run_status ?? 'untracked'}
+                      </span>
+                      {canEdit ? (
+                        <Button
+                          disabled={runQualitySuiteMutation.isPending}
+                          onClick={() => runQualitySuiteMutation.mutate(selectedTable.id)}
+                        >
+                          {runQualitySuiteMutation.isPending ? 'Running...' : 'Run Quality Checks'}
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <div className={cn('rounded-2xl p-4', theme === 'dark' ? 'bg-white/[0.03]' : 'bg-slate-50')}>
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate/50">Expectations</p>
+                      <p className="mt-2 font-display text-2xl text-ink">{selectedTable.quality_expectations?.length ?? 0}</p>
+                      <p className="mt-2 text-sm text-slate/70">Enabled checks in the current suite definition.</p>
+                    </div>
+                    <div className={cn('rounded-2xl p-4', theme === 'dark' ? 'bg-white/[0.03]' : 'bg-slate-50')}>
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate/50">Passed</p>
+                      <p className="mt-2 font-display text-2xl text-ink">
+                        {selectedTable.quality_last_run_results?.filter((result) => result.success).length ?? 0}
+                      </p>
+                      <p className="mt-2 text-sm text-slate/70">Expectations that passed during the latest run.</p>
+                    </div>
+                    <div className={cn('rounded-2xl p-4', theme === 'dark' ? 'bg-white/[0.03]' : 'bg-slate-50')}>
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate/50">Failed</p>
+                      <p className="mt-2 font-display text-2xl text-ink">
+                        {selectedTable.quality_last_run_results?.filter((result) => !result.success).length ?? 0}
+                      </p>
+                      <p className="mt-2 text-sm text-slate/70">Warnings and blocking failures requiring attention.</p>
+                    </div>
+                    <div className={cn('rounded-2xl p-4', theme === 'dark' ? 'bg-white/[0.03]' : 'bg-slate-50')}>
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate/50">Last Run</p>
+                      <p className="mt-2 text-sm font-semibold text-ink">
+                        {selectedTable.quality_last_run_at ? formatDate(selectedTable.quality_last_run_at) : 'Not run yet'}
+                      </p>
+                      <p className="mt-2 text-sm text-slate/70">{selectedTable.quality_last_run_summary ?? 'No run evidence recorded.'}</p>
+                    </div>
+                  </div>
+
+                  {selectedTable.quality_last_run_results?.length ? (
+                    <div className="grid gap-3 lg:grid-cols-2">
+                      {selectedTable.quality_last_run_results.map((result) => (
+                        <div
+                          key={result.id}
+                          className={cn(
+                            'rounded-2xl border p-4',
+                            result.success
+                              ? theme === 'dark'
+                                ? 'border-emerald-400/20 bg-emerald-400/5'
+                                : 'border-emerald-100 bg-emerald-50'
+                              : theme === 'dark'
+                                ? 'border-rose-400/20 bg-rose-400/5'
+                                : 'border-rose-100 bg-rose-50',
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-semibold text-ink">{result.column || 'Table row count'}</p>
+                              <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate/55">
+                                {result.expectation_type.replace(/_/g, ' ')}
+                              </p>
+                            </div>
+                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${result.success ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                              {result.success ? 'Passed' : result.severity === 'error' ? 'Failed' : 'Warning'}
+                            </span>
+                          </div>
+                          <p className="mt-3 text-sm leading-6 text-slate/75">{result.detail}</p>
+                          <p className="mt-2 text-xs text-slate/55">
+                            {result.unexpected_count} unexpected · {result.unexpected_percent}% of rows
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className="grid gap-5 xl:grid-cols-[1fr_0.8fr]">
+                    <fieldset className="grid gap-4" disabled={!canEdit || updateQualitySuiteMutation.isPending}>
+                      <div>
+                        <Label>Suite Name</Label>
+                        <Input value={qualitySuiteNameDraft} onChange={(event) => setQualitySuiteNameDraft(event.target.value)} />
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <div>
+                          <Label>Minimum Rows</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={qualityMinRowsDraft}
+                            onChange={(event) => setQualityMinRowsDraft(event.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label>Required / Not-null Columns</Label>
+                          <Input
+                            value={qualityNotNullDraft}
+                            onChange={(event) => setQualityNotNullDraft(event.target.value)}
+                            placeholder="order_id, customer_id"
+                          />
+                        </div>
+                        <div>
+                          <Label>Unique Columns</Label>
+                          <Input
+                            value={qualityUniqueDraft}
+                            onChange={(event) => setQualityUniqueDraft(event.target.value)}
+                            placeholder="order_id"
+                          />
+                        </div>
+                      </div>
+                    </fieldset>
+
+                    <div className={cn('rounded-2xl p-4', theme === 'dark' ? 'bg-white/[0.03]' : 'bg-slate-50')}>
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate/50">Execution Semantics</p>
+                      <div className="mt-4 space-y-3 text-sm leading-6 text-slate/75">
+                        <p><span className="font-semibold text-ink">Minimum rows</span> fails when the current Delta snapshot is unexpectedly empty or undersized.</p>
+                        <p><span className="font-semibold text-ink">Required columns</span> fail on null values or missing fields.</p>
+                        <p><span className="font-semibold text-ink">Unique columns</span> generate warnings for duplicate non-null values.</p>
+                      </div>
+                      {canEdit ? (
+                        <Button
+                          className="mt-5"
+                          disabled={updateQualitySuiteMutation.isPending || !qualitySuiteNameDraft.trim()}
+                          onClick={() =>
+                            updateQualitySuiteMutation.mutate({
+                              tableId: selectedTable.id,
+                              name: qualitySuiteNameDraft,
+                              minRows: Math.max(Number.parseInt(qualityMinRowsDraft || '0', 10), 0),
+                              notNullColumns: commaSeparatedValues(qualityNotNullDraft),
+                              uniqueColumns: commaSeparatedValues(qualityUniqueDraft),
+                            })
+                          }
+                        >
+                          {updateQualitySuiteMutation.isPending ? 'Saving...' : 'Save Quality Suite'}
+                        </Button>
+                      ) : (
+                        <p className="mt-5 text-sm text-slate/70">Analyst or admin access is required to edit and run quality suites.</p>
                       )}
                     </div>
                   </div>

@@ -9,7 +9,23 @@
     "freshness_status": "fresh"
   },
   "4e7fcb6d-ca89-4423-8c11-0aa02213f985": {
-    "freshness_status": "fresh"
+    "freshness_status": "fresh",
+    "quality_last_run_status": "passed",
+    "quality_last_run_summary": "1 of 1 expectations passed.",
+    "quality_last_run_at": "2026-06-21T22:02:54.647387+00:00",
+    "quality_last_run_results": [
+      {
+        "id": "minimum-row-count",
+        "expectation_type": "row_count_between",
+        "column": null,
+        "severity": "error",
+        "success": true,
+        "observed_value": 12,
+        "unexpected_count": 0,
+        "unexpected_percent": 0.0,
+        "detail": "Observed 12 rows; expected between 1 and any."
+      }
+    ]
   },
   "48a53b15-819b-4b50-9d20-f8d28d0f2dab": {
     "freshness_status": "fresh"

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.common import TimestampedModel
 
@@ -37,6 +37,12 @@ class DeltaTableRead(TimestampedModel):
     contract_last_check_summary: str | None = None
     contract_last_check_issues: list[str] | None = None
     contract_last_check_at: datetime | None = None
+    quality_suite_name: str | None = None
+    quality_expectations: list[dict] | None = None
+    quality_last_run_status: str | None = None
+    quality_last_run_summary: str | None = None
+    quality_last_run_at: datetime | None = None
+    quality_last_run_results: list[dict] | None = None
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 
@@ -64,3 +70,52 @@ class DeltaTableContractUpdateRequest(BaseModel):
     contract_allow_column_removal: bool = False
     contract_allow_type_changes: bool = False
     adopt_current_schema: bool = False
+
+
+class QualityExpectation(BaseModel):
+    id: str = Field(min_length=1, max_length=128)
+    expectation_type: str = Field(pattern="^(row_count_between|not_null|unique|accepted_values)$")
+    enabled: bool = True
+    severity: str = Field(default="error", pattern="^(warning|error)$")
+    column: str | None = None
+    min_value: int | None = Field(default=None, ge=0)
+    max_value: int | None = Field(default=None, ge=0)
+    accepted_values: list[str] | None = None
+
+    @model_validator(mode="after")
+    def validate_configuration(self) -> "QualityExpectation":
+        if self.expectation_type != "row_count_between" and not (self.column or "").strip():
+            raise ValueError("A column is required for column expectations")
+        if self.expectation_type == "row_count_between" and self.min_value is None and self.max_value is None:
+            raise ValueError("Row-count expectations require a minimum or maximum")
+        if self.expectation_type == "accepted_values" and not self.accepted_values:
+            raise ValueError("Accepted-value expectations require at least one value")
+        if self.min_value is not None and self.max_value is not None and self.min_value > self.max_value:
+            raise ValueError("Minimum value cannot be greater than maximum value")
+        return self
+
+
+class QualitySuiteUpdateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    expectations: list[QualityExpectation] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_expectation_ids(self) -> "QualitySuiteUpdateRequest":
+        expectation_ids = [expectation.id for expectation in self.expectations]
+        if len(expectation_ids) != len(set(expectation_ids)):
+            raise ValueError("Expectation IDs must be unique within a suite")
+        return self
+
+
+class QualityRunResponse(BaseModel):
+    table_id: str
+    suite_name: str
+    status: str
+    success: bool
+    row_count: int
+    expectation_count: int
+    passed_count: int
+    failed_count: int
+    summary: str
+    run_at: datetime
+    results: list[dict]

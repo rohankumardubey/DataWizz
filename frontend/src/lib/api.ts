@@ -34,6 +34,8 @@ import type {
   PipelineSchedulerSweep,
   QueryHistory,
   QueryResult,
+  QualityExpectation,
+  QualityRun,
   ReportSchedule,
   ReportScheduleExecution,
   ReportSnapshot,
@@ -153,6 +155,10 @@ export const api = {
     request<DeltaTable>(`/tables/${encodeURIComponent(tableId)}/metadata`, { method: 'PUT', body: json(payload) }),
   updateTableContract: (tableId: string, payload: JsonBody) =>
     request<DeltaTable>(`/tables/${encodeURIComponent(tableId)}/contract`, { method: 'PUT', body: json(payload) }),
+  updateTableQualitySuite: (tableId: string, payload: { name: string; expectations: QualityExpectation[] }) =>
+    request<DeltaTable>(`/tables/${encodeURIComponent(tableId)}/quality-suite`, { method: 'PUT', body: json(payload) }),
+  runTableQualitySuite: (tableId: string) =>
+    request<QualityRun>(`/tables/${encodeURIComponent(tableId)}/quality-runs`, { method: 'POST' }),
   refreshTableMetadata: (tableId: string) =>
     request<DeltaTable>(`/tables/${encodeURIComponent(tableId)}/refresh`, { method: 'POST' }),
 

@@ -125,12 +125,24 @@ The in-app BI module is intentionally lightweight in the MVP:
 
 Optional Superset integration is documented, but not required for the in-app MVP flow.
 
+## Data Quality
+
+Curated Delta tables can retain reusable expectation-style quality suites in the local catalog metadata registry. The first implementation supports:
+
+- minimum and maximum row-count expectations
+- not-null column expectations
+- uniqueness expectations for non-null values
+- accepted-value expectations
+- persisted latest-run status, summary, evidence, and unexpected-row percentages
+
+Checks execute locally against the current Delta snapshot through DuckDB. The service boundary is intentionally independent from the UI and metadata registry so a Great Expectations adapter, scheduled runs, and pipeline quality gates can be added without replacing the catalog workflow.
+
 ## Future-Ready Extension Points
 
 - Spark or DataFusion execution engines behind the query interface
 - MinIO-backed object storage paths and credentials
 - Airflow API trigger integration
-- Great Expectations validation nodes
+- Great Expectations execution adapter and pipeline quality gates
 - OpenLineage event emission
 - Trino or Nessie integration for richer lakehouse metadata
 
@@ -154,6 +166,7 @@ Included in this first version:
 - SQL execution with DuckDB
 - Write query results to Delta Lake
 - Delta catalog browsing
+- Curated-table quality suites and on-demand quality runs
 - Visual pipeline builder with manual execution
 - Pipeline runs and logs
 - Basic BI module with datasets, charts, and dashboards
@@ -161,7 +174,7 @@ Included in this first version:
 
 Deferred but documented as TODOs:
 
-- auth/RBAC
-- advanced scheduling and Airflow execution
-- Spark/Flink engines
+- external Airflow execution
+- Flink streaming
+- scheduled Great Expectations runs and pipeline quality gates
 - production observability and Kubernetes deployment

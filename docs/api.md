@@ -49,6 +49,32 @@ Example:
 
 - `GET /api/tables`
 - `GET /api/tables/{table_id}/preview`
+- `PUT /api/tables/{table_id}/quality-suite`
+- `POST /api/tables/{table_id}/quality-runs`
+
+Quality suite example:
+
+```json
+{
+  "name": "Orders baseline",
+  "expectations": [
+    {
+      "id": "has-rows",
+      "expectation_type": "row_count_between",
+      "min_value": 1,
+      "enabled": true,
+      "severity": "error"
+    },
+    {
+      "id": "order-id-unique",
+      "expectation_type": "unique",
+      "column": "order_id",
+      "enabled": true,
+      "severity": "warning"
+    }
+  ]
+}
+```
 
 ## Pipelines
 

@@ -85,9 +85,9 @@ export function DashboardPage() {
         <Panel>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Pending Product Work</p>
           <ul className="mt-4 space-y-3 text-sm leading-6 text-slate-700">
-            <li>Authentication and RBAC are still missing, so the app is not yet multi-user safe.</li>
-            <li>Scheduling and orchestration are still MVP-level; real Airflow execution is not wired yet.</li>
-            <li>Governance pieces like lineage, quality checks, semantic metrics, and row/column security remain TODO.</li>
+            <li>Flink streaming and external Airflow execution are not wired yet.</li>
+            <li>Quality suites run on demand today; scheduled runs and pipeline quality gates are next.</li>
+            <li>Semantic metrics, row-level security, and column masking remain TODO.</li>
           </ul>
         </Panel>
         <Panel>
