@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
     scheduler_poll_interval_seconds: int = 30
     scheduler_timezone: str = "Asia/Kolkata"
+    openlineage_enabled: bool = True
+    openlineage_namespace: str = "datawizz://local"
+    openlineage_transport_url: str | None = None
+    openlineage_api_key: str | None = None
+    openlineage_timeout_seconds: float = 3.0
     demo_admin_email: str = "admin@datawizz.local"
     demo_admin_password: str = "datawizz123"
     demo_admin_name: str = "Demo Admin"

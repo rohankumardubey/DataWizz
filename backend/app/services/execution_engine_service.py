@@ -24,6 +24,7 @@ from app.models.catalog import UploadedFile
 from app.models.notebook import NotebookDocument, NotebookRun
 from app.services.delta_service import DeltaService
 from app.services.duckdb_service import DuckDBService
+from app.services.openlineage_service import openlineage_service
 from app.utils.naming import slugify_identifier
 
 
@@ -150,6 +151,28 @@ class ExecutionEngineService:
         db.add(run)
         db.commit()
         db.refresh(run)
+        lineage_job_name = f"notebook.{slugify_identifier(notebook.name)}"
+        lineage_run_facets = {
+            "datawizz": {
+                "notebookId": notebook.id,
+                "engineId": notebook.engine_id,
+                "startCellId": start_cell_id,
+                "endCellId": end_cell_id,
+            }
+        }
+        openlineage_service.emit(
+            event_type="START",
+            job_name=lineage_job_name,
+            run_id=run.id,
+            run_facets=lineage_run_facets,
+            job_facets={
+                "datawizz": {
+                    "jobKind": "notebook",
+                    "notebookId": notebook.id,
+                    "engineId": notebook.engine_id,
+                }
+            },
+        )
 
         cell_results: list[dict[str, Any]] = []
         run_started = perf_counter()
@@ -210,6 +233,27 @@ class ExecutionEngineService:
             db.commit()
             db.refresh(run)
             db.refresh(notebook)
+            openlineage_service.emit(
+                event_type="FAIL" if run_error else "COMPLETE",
+                job_name=lineage_job_name,
+                run_id=run.id,
+                run_facets={
+                    "datawizz": {
+                        **lineage_run_facets["datawizz"],
+                        "status": run.status,
+                        "durationMs": run.duration_ms,
+                        "completedCells": len(cell_results),
+                        "error": run_error,
+                    }
+                },
+                job_facets={
+                    "datawizz": {
+                        "jobKind": "notebook",
+                        "notebookId": notebook.id,
+                        "engineId": notebook.engine_id,
+                    }
+                },
+            )
 
         return run, cell_results
 

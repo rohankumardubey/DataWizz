@@ -23,6 +23,21 @@ class SettingsSnapshotResponse(BaseModel):
     execution: dict
 
 
+class OpenLineageEventListResponse(BaseModel):
+    items: list[dict]
+
+
+class OpenLineageStatusResponse(BaseModel):
+    enabled: bool
+    namespace: str
+    transport_mode: str
+    transport_url: str | None = None
+    events_path: str
+    event_count: int
+    delivery_failures: int
+    latest_event_at: str | None = None
+
+
 class SupersetHealthResponse(BaseModel):
     status: str
     reachable: bool

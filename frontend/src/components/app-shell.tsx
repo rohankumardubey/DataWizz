@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Cpu, Database, LayoutDashboard, LineChart, LogOut, Logs, MoonStar, PlaySquare, Search, Settings2, Sparkles, SunMedium, TableProperties, Workflow } from 'lucide-react'
+import { Bell, Cpu, Database, GitBranch, LayoutDashboard, LineChart, LogOut, Logs, MoonStar, PlaySquare, Search, Settings2, Sparkles, SunMedium, TableProperties, Workflow } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/auth-context'
@@ -21,6 +21,7 @@ const navGroups = [
       { label: 'Pipeline Builder', to: '/pipelines', icon: Workflow, end: true, roles: ['admin', 'analyst'] },
       { label: 'Pipeline Runs', to: '/runs', icon: PlaySquare, end: true },
       { label: 'Job Logs', to: '/logs', icon: Logs, end: true },
+      { label: 'Lineage Events', to: '/lineage-events', icon: GitBranch, end: true },
     ],
   },
   {

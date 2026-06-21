@@ -7,6 +7,14 @@ Base URL: `http://localhost:8000/api`
 - `GET /health`
 - `GET /api/system/dashboard-metrics`
 - `GET /api/system/settings`
+- `GET /api/system/openlineage/status`
+- `GET /api/system/openlineage/events`
+
+OpenLineage event filters:
+
+```text
+?event_type=COMPLETE&job_name=pipeline.sales_curated&run_id=<uuid>&limit=100
+```
 
 ## File Management
 

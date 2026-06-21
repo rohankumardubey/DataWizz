@@ -24,6 +24,8 @@ import type {
   NotebookRevisionRestore,
   NotebookRunExecution,
   NotebookSnippet,
+  OpenLineageEventEnvelope,
+  OpenLineageStatus,
   Pipeline,
   PipelineEdge,
   PipelineNode,
@@ -127,6 +129,11 @@ export const api = {
   getCurrentSessionUser: () => request<DemoUser>('/system/me'),
   getDashboardMetrics: () => request<DashboardMetrics>('/system/dashboard-metrics'),
   getSettings: () => request<{ storage: Record<string, unknown>; execution: Record<string, unknown> }>('/system/settings'),
+  getOpenLineageStatus: () => request<OpenLineageStatus>('/system/openlineage/status'),
+  listOpenLineageEvents: (filters: { event_type?: string; job_name?: string; run_id?: string; limit?: number } = {}) =>
+    request<{ items: OpenLineageEventEnvelope[] }>(
+      `/system/openlineage/events${queryString(filters)}`,
+    ),
   globalSearch: (search: string) =>
     request<{ query: string; items: GlobalSearchResult[] }>(`/system/search${queryString({ q: search })}`),
 

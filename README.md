@@ -350,6 +350,7 @@ The repository-integrity check specifically verifies that critical frontend libr
 - Catalog governance editing, quality and freshness signals, data contract guardrails, lineage relationships, and mini lineage graph drill-down
 - Curated-table quality suites with minimum-row, not-null, uniqueness, and accepted-value expectations plus persisted run evidence
 - Visual pipeline builder validation, join and aggregation guardrails, retries, logs filtering, and recurring scheduler execution
+- OpenLineage-compatible pipeline and notebook lifecycle events with local retention, dataset inputs/outputs, and optional HTTP delivery
 - Engine Lab notebooks with DuckDB, PySpark, and DataFusion runtimes, saved snippets, collaboration basics, and persisted cell outputs
 - BI dataset explorer, chart builder, saved charts, dashboard builder and viewer, filters, and report scheduler with stored artifacts
 - Embedded Superset runtime with a shared serving catalog and auto-provisioned `DataWizz Serving Catalog` connection
@@ -359,7 +360,7 @@ The repository-integrity check specifically verifies that critical frontend libr
 
 - Flink streaming support
 - Great Expectations adapter, scheduled quality runs, and pipeline quality gates
-- OpenLineage integration
+- OpenLineage coverage for SQL, reports, quality runs, and additional external transport authentication modes
 - Hive Metastore or Nessie-backed catalog options
 - Notebook export artifacts and richer collaboration flows
 - Natural-language chart generation

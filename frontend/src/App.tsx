@@ -20,6 +20,7 @@ import { SettingsPage } from './pages/settings'
 import { SqlWorkspacePage } from './pages/sql-workspace'
 import { SupersetSetupPage } from './pages/superset'
 import { LoginPage } from './pages/login'
+import { OpenLineagePage } from './pages/openlineage'
 
 function App() {
   return (
@@ -33,6 +34,7 @@ function App() {
           <Route path="/catalog" element={<CatalogPage />} />
           <Route path="/runs" element={<PipelineRunsPage />} />
           <Route path="/logs" element={<JobLogsPage />} />
+          <Route path="/lineage-events" element={<OpenLineagePage />} />
           <Route path="/bi" element={<BiHomePage />} />
           <Route path="/bi/charts" element={<SavedChartsPage />} />
           <Route path="/bi/dashboards" element={<DashboardViewerPage />} />
