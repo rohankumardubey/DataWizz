@@ -38,6 +38,8 @@ import type {
   QueryResult,
   QualityExpectation,
   QualityRun,
+  QualitySchedulerStatus,
+  QualitySchedulerSweep,
   ReportSchedule,
   ReportScheduleExecution,
   ReportSnapshot,
@@ -166,6 +168,13 @@ export const api = {
     request<DeltaTable>(`/tables/${encodeURIComponent(tableId)}/quality-suite`, { method: 'PUT', body: json(payload) }),
   runTableQualitySuite: (tableId: string) =>
     request<QualityRun>(`/tables/${encodeURIComponent(tableId)}/quality-runs`, { method: 'POST' }),
+  listTableQualityRuns: (tableId: string) =>
+    request<ListResponse<QualityRun>>(`/tables/${encodeURIComponent(tableId)}/quality-runs`),
+  updateTableQualitySchedule: (tableId: string, payload: { cron?: string | null; enabled: boolean }) =>
+    request<DeltaTable>(`/tables/${encodeURIComponent(tableId)}/quality-schedule`, { method: 'PUT', body: json(payload) }),
+  getQualitySchedulerStatus: () => request<QualitySchedulerStatus>('/tables/quality-scheduler/status'),
+  runDueQualitySchedules: () =>
+    request<QualitySchedulerSweep>('/tables/quality-scheduler/run-due', { method: 'POST' }),
   refreshTableMetadata: (tableId: string) =>
     request<DeltaTable>(`/tables/${encodeURIComponent(tableId)}/refresh`, { method: 'POST' }),
 

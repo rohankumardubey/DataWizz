@@ -7,6 +7,7 @@ BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/frontend"
 RUNTIME_DIR="$ROOT_DIR/.runtime"
 DATAWIZZ_CACHE_DIR="${DATAWIZZ_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/datawizz}"
+LOCAL_DATABASE_PATH="${DATAWIZZ_LOCAL_DATABASE_PATH:-$DATAWIZZ_CACHE_DIR/local/metadata.db}"
 SUPERSET_VENV_DIR="${SUPERSET_VENV_DIR:-$DATAWIZZ_CACHE_DIR/superset/6.1.0/venv}"
 SUPERSET_NATIVE_HOME="$ROOT_DIR/storage/temp/superset/home"
 SUPERSET_NATIVE_DB="$ROOT_DIR/storage/temp/superset/superset.db"
@@ -132,7 +133,11 @@ print_port_owner() {
 
 http_ready() {
   local url="$1"
-  curl --silent --show-error --max-time 1 --output /dev/null "$url" >/dev/null 2>&1
+  curl --fail --silent --show-error --max-time 1 --output /dev/null "$url" >/dev/null 2>&1
+}
+
+backend_ready() {
+  http_ready "http://localhost:8000/health/ready"
 }
 
 wait_for_http_ready() {
@@ -631,6 +636,23 @@ ensure_frontend_env() {
   fi
 }
 
+ensure_local_database() {
+  local database_dir
+
+  database_dir="$(dirname "$LOCAL_DATABASE_PATH")"
+  mkdir -p "$database_dir"
+  chmod u+rwx "$database_dir"
+
+  if [[ ! -f "$LOCAL_DATABASE_PATH" && -f "$BACKEND_DIR/local.db" ]]; then
+    log "Seeding machine-local SQLite metadata from backend/local.db"
+    cp "$BACKEND_DIR/local.db" "$LOCAL_DATABASE_PATH"
+  fi
+
+  if [[ -f "$LOCAL_DATABASE_PATH" ]]; then
+    chmod u+rw "$LOCAL_DATABASE_PATH"
+  fi
+}
+
 start_local() {
   require_cmd python3
   require_cmd npm
@@ -639,6 +661,7 @@ start_local() {
 
   ensure_backend_env
   ensure_frontend_env
+  ensure_local_database
 
   local backend_log="$RUNTIME_DIR/backend.log"
   local frontend_log="$RUNTIME_DIR/frontend.log"
@@ -681,10 +704,10 @@ start_local() {
   fi
 
   if port_in_use "$backend_port"; then
-    if http_ready "$backend_url"; then
-      log "Backend already running at $backend_url. Reusing existing process."
+    if backend_ready; then
+      log "Backend already running and database-write ready at $backend_url. Reusing existing process."
     else
-      log "Backend port $backend_port is occupied but not healthy. Restarting backend."
+      log "Backend port $backend_port is occupied but not database-write ready. Restarting backend."
       release_port "$backend_port"
     fi
   fi
@@ -704,11 +727,17 @@ start_local() {
       cd "$BACKEND_DIR"
       # shellcheck disable=SC1091
       source .venv/bin/activate
-      DATABASE_URL=sqlite:///./local.db \
+      DATABASE_URL="sqlite:///$LOCAL_DATABASE_PATH" \
         uvicorn app.main:app --reload --reload-dir app --reload-dir alembic --host 0.0.0.0 --port "$backend_port"
     ) >"$backend_log" 2>&1 &
     echo $! >"$backend_pid_file"
     backend_started=true
+  fi
+
+  if ! wait_for_http_ready "http://localhost:$backend_port/health/ready" 30 1; then
+    log "Backend failed its database-write readiness check. Last log lines:"
+    tail -40 "$backend_log" || true
+    return 1
   fi
 
   if ! port_in_use "$frontend_port"; then

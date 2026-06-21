@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from time import perf_counter
 
 import duckdb
 from deltalake import DeltaTable as DeltaLakeTable
+from sqlalchemy.orm import Session
 
-from app.models.catalog import DeltaTable
+from app.models.catalog import DeltaTable, QualityRun
+from app.services.catalog_metadata_service import CatalogMetadataService
+from app.services.openlineage_service import openlineage_service
+from app.utils.naming import slugify_identifier
 
 
 class DataQualityService:
+    def __init__(self) -> None:
+        self.catalog_metadata_service = CatalogMetadataService()
+
     def run(self, table: DeltaTable, expectations: list[dict], *, suite_name: str | None = None) -> dict:
         arrow_table = DeltaLakeTable(table.storage_path).to_pyarrow_table()
         columns = set(arrow_table.column_names)
@@ -45,6 +53,111 @@ class DataQualityService:
             "run_at": datetime.now(timezone.utc).isoformat(),
             "results": results,
         }
+
+    def execute(
+        self,
+        db: Session,
+        table: DeltaTable,
+        *,
+        trigger_type: str = "manual",
+        pipeline_run_id: str | None = None,
+        node_id: str | None = None,
+    ) -> QualityRun:
+        suite = self.catalog_metadata_service.get_quality_suite(table)
+        started_at = datetime.now(timezone.utc)
+        started = perf_counter()
+        lineage_job_name = f"quality.{slugify_identifier(table.schema_name)}.{slugify_identifier(table.name)}"
+        lineage_dataset = openlineage_service.dataset(
+            namespace=f"datawizz://delta/{table.schema_name}",
+            name=table.name,
+            fields=table.schema_json or [],
+            facets={"datawizz": {"assetKind": "delta_table", "assetId": table.id}},
+        )
+        run = QualityRun(
+            table_id=table.id,
+            pipeline_run_id=pipeline_run_id,
+            node_id=node_id,
+            suite_name=suite["quality_suite_name"],
+            trigger_type=trigger_type,
+            status="running",
+            success=False,
+            row_count=0,
+            expectation_count=0,
+            passed_count=0,
+            failed_count=0,
+            summary="Quality checks are running.",
+            results_json=[],
+            started_at=started_at,
+            finished_at=started_at,
+            duration_ms=0,
+        )
+        db.add(run)
+        db.commit()
+        db.refresh(run)
+        openlineage_service.emit(
+            event_type="START",
+            job_name=lineage_job_name,
+            run_id=run.id,
+            inputs=[lineage_dataset],
+            run_facets={
+                "datawizz": {
+                    "jobKind": "quality_check",
+                    "tableId": table.id,
+                    "qualitySuite": suite["quality_suite_name"],
+                    "triggerType": trigger_type,
+                    "pipelineRunId": pipeline_run_id,
+                    "nodeId": node_id,
+                }
+            },
+        )
+
+        try:
+            result = self.run(
+                table,
+                suite["quality_expectations"],
+                suite_name=suite["quality_suite_name"],
+            )
+            run.status = result["status"]
+            run.success = result["success"]
+            run.row_count = result["row_count"]
+            run.expectation_count = result["expectation_count"]
+            run.passed_count = result["passed_count"]
+            run.failed_count = result["failed_count"]
+            run.summary = result["summary"]
+            run.results_json = result["results"]
+            self.catalog_metadata_service.record_quality_run(table, result)
+        except Exception as exc:
+            run.status = "failed"
+            run.success = False
+            run.summary = f"Quality execution failed: {exc}"
+            run.results_json = []
+        finally:
+            run.finished_at = datetime.now(timezone.utc)
+            run.duration_ms = int((perf_counter() - started) * 1000)
+            db.commit()
+            db.refresh(run)
+
+        openlineage_service.emit(
+            event_type="COMPLETE" if run.success else "FAIL",
+            job_name=lineage_job_name,
+            run_id=run.id,
+            inputs=[lineage_dataset],
+            run_facets={
+                "datawizz": {
+                    "jobKind": "quality_check",
+                    "tableId": table.id,
+                    "qualitySuite": run.suite_name,
+                    "triggerType": trigger_type,
+                    "pipelineRunId": pipeline_run_id,
+                    "nodeId": node_id,
+                    "status": run.status,
+                    "passedCount": run.passed_count,
+                    "failedCount": run.failed_count,
+                    "durationMs": run.duration_ms,
+                }
+            },
+        )
+        return run
 
     def _evaluate_expectation(
         self,

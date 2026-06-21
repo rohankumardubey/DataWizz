@@ -25,7 +25,7 @@ function makeStarterNodes(): Node[] {
       id: 'writeDelta_3',
       type: 'writeDelta',
       position: { x: 620, y: 120 },
-      data: { label: 'Write Delta', config: { tableName: 'sales_curated', mode: 'overwrite' }, type: 'writeDelta' },
+      data: { label: 'Write Delta', config: { tableName: 'sales_curated', mode: 'overwrite', qualityGate: 'warn' }, type: 'writeDelta' },
     },
   ]
 }

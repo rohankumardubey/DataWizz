@@ -104,6 +104,8 @@ export function CatalogPage() {
   const [qualityMinRowsDraft, setQualityMinRowsDraft] = useState('1')
   const [qualityNotNullDraft, setQualityNotNullDraft] = useState('')
   const [qualityUniqueDraft, setQualityUniqueDraft] = useState('')
+  const [qualityScheduleCronDraft, setQualityScheduleCronDraft] = useState('')
+  const [qualityScheduleEnabledDraft, setQualityScheduleEnabledDraft] = useState(false)
   const [lineageFocus, setLineageFocus] = useState<LineageFocus>('upstream')
   const [statusMessage, setStatusMessage] = useState('Select a curated table to inspect governance metadata, ownership, freshness, and lineage hints.')
   const appliedSearchTableIdRef = useRef<string | null>(null)
@@ -117,6 +119,16 @@ export function CatalogPage() {
     queryKey: ['tables', selectedTableId, 'lineage'],
     queryFn: () => api.getTableLineage(selectedTableId!),
     enabled: Boolean(selectedTableId),
+  })
+  const qualityRunsQuery = useQuery({
+    queryKey: ['tables', selectedTableId, 'quality-runs'],
+    queryFn: () => api.listTableQualityRuns(selectedTableId!),
+    enabled: Boolean(selectedTableId),
+  })
+  const qualitySchedulerQuery = useQuery({
+    queryKey: ['quality-scheduler'],
+    queryFn: api.getQualitySchedulerStatus,
+    refetchInterval: 15000,
   })
   const updateMetadataMutation = useMutation({
     mutationFn: async (payload: { tableId: string; owner?: string; tags?: string[]; lineage_hint?: string }) =>
@@ -216,7 +228,32 @@ export function CatalogPage() {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['tables'] })
       queryClient.invalidateQueries({ queryKey: ['tables', result.table_id, 'preview'] })
+      queryClient.invalidateQueries({ queryKey: ['tables', result.table_id, 'quality-runs'] })
       setStatusMessage(`${result.suite_name}: ${result.summary}`)
+    },
+    onError: (error: Error) => setStatusMessage(error.message),
+  })
+  const updateQualityScheduleMutation = useMutation({
+    mutationFn: (payload: { tableId: string; cron: string | null; enabled: boolean }) =>
+      api.updateTableQualitySchedule(payload.tableId, { cron: payload.cron, enabled: payload.enabled }),
+    onSuccess: (table) => {
+      queryClient.invalidateQueries({ queryKey: ['tables'] })
+      queryClient.invalidateQueries({ queryKey: ['quality-scheduler'] })
+      setStatusMessage(
+        table.quality_schedule_enabled
+          ? `Quality checks for ${table.schema_name}.${table.name} are scheduled with ${table.quality_schedule_cron}.`
+          : `Disabled scheduled quality checks for ${table.schema_name}.${table.name}.`,
+      )
+    },
+    onError: (error: Error) => setStatusMessage(error.message),
+  })
+  const runDueQualityMutation = useMutation({
+    mutationFn: api.runDueQualitySchedules,
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['tables'] })
+      queryClient.invalidateQueries({ queryKey: ['quality-scheduler'] })
+      queryClient.invalidateQueries({ queryKey: ['tables', selectedTableId, 'quality-runs'] })
+      setStatusMessage(`Quality scheduler checked ${result.checked} tables and triggered ${result.triggered.length} runs.`)
     },
     onError: (error: Error) => setStatusMessage(error.message),
   })
@@ -323,6 +360,8 @@ export function CatalogPage() {
         .filter(Boolean)
         .join(', '),
     )
+    setQualityScheduleCronDraft(selectedTable.quality_schedule_cron ?? '')
+    setQualityScheduleEnabledDraft(selectedTable.quality_schedule_enabled ?? false)
     setStatusMessage(`Inspecting ${selectedTable.schema_name}.${selectedTable.name}.`)
   }, [selectedTableId, selectedTable])
 
@@ -950,7 +989,7 @@ export function CatalogPage() {
                       <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate/55">Data Quality Suite</p>
                       <h3 className="mt-2 font-display text-2xl text-ink">Reusable Expectations and Run Evidence</h3>
                       <p className="mt-3 max-w-3xl text-sm leading-6 text-slate/70">
-                        Define a baseline row-volume check plus required and unique columns. Runs execute directly against the current Delta snapshot and retain evidence for the latest result.
+                        Define a baseline row-volume check plus required and unique columns. Manual, scheduled, and pipeline-triggered runs execute against the current Delta snapshot and retain historical evidence.
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -1094,6 +1133,110 @@ export function CatalogPage() {
                       ) : (
                         <p className="mt-5 text-sm text-slate/70">Analyst or admin access is required to edit and run quality suites.</p>
                       )}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-5 border-t border-slate-100 pt-5 xl:grid-cols-[0.8fr_1.2fr]">
+                    <div className={cn('rounded-2xl p-4', theme === 'dark' ? 'bg-white/[0.03]' : 'bg-slate-50')}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate/50">Automated Schedule</p>
+                          <p className="mt-2 text-sm leading-6 text-slate/75">
+                            Run this suite independently from pipelines using the shared backend scheduler.
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${qualityScheduleEnabledDraft ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>
+                          {qualityScheduleEnabledDraft ? 'Active' : 'Disabled'}
+                        </span>
+                      </div>
+                      <div className="mt-4 grid gap-4">
+                        <div>
+                          <Label>Cron Expression</Label>
+                          <Input
+                            value={qualityScheduleCronDraft}
+                            onChange={(event) => setQualityScheduleCronDraft(event.target.value)}
+                            placeholder="0 7 * * *"
+                            disabled={!canEdit}
+                          />
+                        </div>
+                        <div>
+                          <Label>Schedule State</Label>
+                          <Select
+                            value={String(qualityScheduleEnabledDraft)}
+                            onChange={(event) => setQualityScheduleEnabledDraft(event.target.value === 'true')}
+                            disabled={!canEdit}
+                          >
+                            <option value="false">Disabled</option>
+                            <option value="true">Enabled</option>
+                          </Select>
+                        </div>
+                        {canEdit ? (
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              disabled={updateQualityScheduleMutation.isPending}
+                              onClick={() =>
+                                updateQualityScheduleMutation.mutate({
+                                  tableId: selectedTable.id,
+                                  cron: qualityScheduleCronDraft.trim() || null,
+                                  enabled: qualityScheduleEnabledDraft,
+                                })
+                              }
+                            >
+                              {updateQualityScheduleMutation.isPending ? 'Saving...' : 'Save Schedule'}
+                            </Button>
+                            {hasAnyRole('admin') ? (
+                              <Button
+                                tone="ghost"
+                                disabled={runDueQualityMutation.isPending}
+                                onClick={() => runDueQualityMutation.mutate()}
+                              >
+                                {runDueQualityMutation.isPending ? 'Checking...' : 'Run Due Checks'}
+                              </Button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                      <p className="mt-4 text-xs leading-5 text-slate/55">
+                        Scheduler: {qualitySchedulerQuery.data?.running ? 'running' : 'stopped'} · {qualitySchedulerQuery.data?.managed_table_count ?? 0} managed tables · {qualitySchedulerQuery.data?.timezone ?? 'configured timezone'}
+                      </p>
+                    </div>
+
+                    <div>
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate/50">Validation History</p>
+                          <h4 className="mt-2 font-display text-xl text-ink">Recent Quality Runs</h4>
+                        </div>
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                          {qualityRunsQuery.data?.items.length ?? 0} runs
+                        </span>
+                      </div>
+                      <div className="mt-4 space-y-3">
+                        {qualityRunsQuery.data?.items.length ? (
+                          qualityRunsQuery.data.items.slice(0, 8).map((run) => (
+                            <div key={run.id} className={cn('rounded-2xl border p-4', theme === 'dark' ? 'border-white/10 bg-white/[0.03]' : 'border-slate-100 bg-slate-50')}>
+                              <div className="flex items-start justify-between gap-4">
+                                <div>
+                                  <p className="font-semibold text-ink">{run.suite_name}</p>
+                                  <p className="mt-1 text-sm text-slate/70">
+                                    {run.passed_count}/{run.expectation_count} passed · {run.row_count} rows · {run.duration_ms} ms
+                                  </p>
+                                </div>
+                                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${qualityTone(run.status)}`}>{run.status}</span>
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate/55">
+                                <span>{run.trigger_type.replace(/_/g, ' ')}</span>
+                                <span>·</span>
+                                <span>{formatDate(run.started_at)}</span>
+                                {run.pipeline_run_id ? <span>· Pipeline run {run.pipeline_run_id}</span> : null}
+                              </div>
+                              <p className="mt-3 text-sm leading-6 text-slate/75">{run.summary}</p>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate/70">No persisted quality runs yet.</p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </Panel>

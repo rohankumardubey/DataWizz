@@ -10,6 +10,7 @@ from app.models.pipeline import JobLog, Pipeline, PipelineRun
 from app.services.delta_service import DeltaService
 from app.services.duckdb_service import DuckDBService
 from app.services.openlineage_service import openlineage_service
+from app.services.data_quality_service import DataQualityService
 from app.utils.naming import slugify_identifier
 
 
@@ -17,6 +18,7 @@ class PipelineService:
     def __init__(self) -> None:
         self.duckdb_service = DuckDBService()
         self.delta_service = DeltaService()
+        self.data_quality_service = DataQualityService()
         self.supported_join_types = {"inner", "left", "right", "full"}
         self.supported_aggregations = {"sum", "avg", "count", "min", "max"}
 
@@ -222,10 +224,13 @@ class PipelineService:
             elif node_type == "writeDelta":
                 table_name = str(config.get("tableName") or "").strip()
                 mode = str(config.get("mode") or "overwrite").strip()
+                quality_gate = str(config.get("qualityGate") or "off").strip().lower()
                 if not table_name:
                     issues.append(f"Node {node_id} (writeDelta) needs a target table name.")
                 if mode not in {"overwrite", "append"}:
                     issues.append(f"Node {node_id} (writeDelta) must use either overwrite or append mode.")
+                if quality_gate not in {"off", "warn", "block"}:
+                    issues.append(f"Node {node_id} (writeDelta) quality gate must be off, warn, or block.")
 
             elif node_type == "schedule":
                 cron = str(config.get("cron") or "").strip()
@@ -339,6 +344,7 @@ class PipelineService:
             graph_inputs[edge["target"]].append(edge["source"])
 
         view_names: dict[str, str] = {}
+        quality_run_summaries: list[dict] = []
         current_node_id: str | None = None
         current_node_type: str | None = None
 
@@ -463,6 +469,39 @@ class PipelineService:
                         source_query=f"Pipeline {pipeline.name} node {node_id}",
                     )
                     lineage_outputs.append(self._delta_dataset(written))
+                    quality_gate = str(config.get("qualityGate") or "off").strip().lower()
+                    if quality_gate != "off":
+                        quality_run = self.data_quality_service.execute(
+                            db,
+                            written,
+                            trigger_type="pipeline_gate",
+                            pipeline_run_id=run.id,
+                            node_id=node_id,
+                        )
+                        quality_summary = {
+                            "quality_run_id": quality_run.id,
+                            "node_id": node_id,
+                            "table_id": written.id,
+                            "table_name": f"{written.schema_name}.{written.name}",
+                            "gate_mode": quality_gate,
+                            "status": quality_run.status,
+                            "success": quality_run.success,
+                            "summary": quality_run.summary,
+                        }
+                        quality_run_summaries.append(quality_summary)
+                        self.create_log(
+                            db,
+                            run_id=run.id,
+                            level="INFO" if quality_run.success else "ERROR",
+                            source="qualityGate",
+                            message=f"Quality gate {quality_run.status} for {written.schema_name}.{written.name}: {quality_run.summary}",
+                            status="success" if quality_run.success else "failed",
+                            context_json=quality_summary,
+                        )
+                        if quality_gate == "block" and not quality_run.success:
+                            raise ValueError(
+                                f"Quality gate blocked downstream execution for {written.schema_name}.{written.name}: {quality_run.summary}"
+                            )
                     conn.execute(f"CREATE OR REPLACE VIEW {view_name} AS SELECT * FROM {final_view}")
                     self.create_log(
                         db,
@@ -505,6 +544,7 @@ class PipelineService:
                 "ordered_nodes": ordered_nodes,
                 "completed_nodes": list(view_names.keys()),
                 "retry_of_run_id": retry_of_run_id,
+                "quality_runs": quality_run_summaries,
             }
             db.commit()
             openlineage_service.emit(
@@ -533,6 +573,7 @@ class PipelineService:
                 "ordered_nodes": ordered_nodes,
                 "completed_nodes": list(view_names.keys()),
                 "retry_of_run_id": retry_of_run_id,
+                "quality_runs": quality_run_summaries,
             }
             db.commit()
             self.create_log(

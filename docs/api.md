@@ -59,6 +59,10 @@ Example:
 - `GET /api/tables/{table_id}/preview`
 - `PUT /api/tables/{table_id}/quality-suite`
 - `POST /api/tables/{table_id}/quality-runs`
+- `GET /api/tables/{table_id}/quality-runs`
+- `PUT /api/tables/{table_id}/quality-schedule`
+- `GET /api/tables/quality-scheduler/status`
+- `POST /api/tables/quality-scheduler/run-due`
 
 Quality suite example:
 
@@ -83,6 +87,17 @@ Quality suite example:
   ]
 }
 ```
+
+Quality schedule example:
+
+```json
+{
+  "cron": "0 7 * * *",
+  "enabled": true
+}
+```
+
+Pipeline `writeDelta` nodes accept `qualityGate` values of `off`, `warn`, or `block`. Both `warn` and `block` execute the saved quality suite after publishing the Delta table. `block` fails the pipeline when an error-severity expectation fails; the published Delta version is retained.
 
 ## Pipelines
 
