@@ -342,6 +342,44 @@ export type GlobalSearchResult = {
   updated_at: string
 }
 
+export type OpenLineageDataset = {
+  namespace: string
+  name: string
+  facets: Record<string, unknown>
+}
+
+export type OpenLineageEvent = {
+  eventType: 'START' | 'COMPLETE' | 'FAIL' | string
+  eventTime: string
+  run: { runId: string; facets: Record<string, unknown> }
+  job: { namespace: string; name: string; facets: Record<string, unknown> }
+  inputs: OpenLineageDataset[]
+  outputs: OpenLineageDataset[]
+  producer: string
+  schemaURL: string
+}
+
+export type OpenLineageEventEnvelope = {
+  event: OpenLineageEvent
+  delivery: {
+    status: 'local_only' | 'delivered' | 'failed'
+    http_status?: number | null
+    detail: string
+  }
+  storage?: { status: 'failed'; detail: string }
+}
+
+export type OpenLineageStatus = {
+  enabled: boolean
+  namespace: string
+  transport_mode: 'local' | 'http'
+  transport_url?: string | null
+  events_path: string
+  event_count: number
+  delivery_failures: number
+  latest_event_at?: string | null
+}
+
 export type PipelineRunDetail = {
   run: PipelineRun
   pipeline?: Pipeline

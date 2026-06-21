@@ -87,7 +87,7 @@ export function DashboardPage() {
           <ul className="mt-4 space-y-3 text-sm leading-6 text-slate-700">
             <li>Flink streaming and external Airflow execution are not wired yet.</li>
             <li>Quality suites run on demand today; scheduled runs and pipeline quality gates are next.</li>
-            <li>Semantic metrics, row-level security, and column masking remain TODO.</li>
+            <li>OpenLineage covers pipelines and notebooks; SQL, reports, and quality runs need the same instrumentation next.</li>
           </ul>
         </Panel>
         <Panel>

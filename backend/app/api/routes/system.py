@@ -21,6 +21,8 @@ from app.schemas.system import (
     GlobalSearchResponse,
     GlobalSearchResult,
     LoginRequest,
+    OpenLineageEventListResponse,
+    OpenLineageStatusResponse,
     RecentActivityItem,
     SettingsSnapshotResponse,
     SupersetEmbedLaunchResponse,
@@ -28,6 +30,7 @@ from app.schemas.system import (
 )
 from app.services.auth_service import auth_service
 from app.services.bi_service import BiService
+from app.services.openlineage_service import openlineage_service
 from app.services.storage import StorageService
 from app.services.superset_catalog_service import superset_catalog_service
 from app.services.superset_runtime_service import superset_runtime_service
@@ -76,6 +79,29 @@ def settings_snapshot(_: User = Depends(require_roles("admin"))) -> SettingsSnap
             "minio_bucket": settings.minio_bucket,
         },
         execution={"engine": settings.execution_engine, "query_preview_limit": settings.query_preview_limit},
+    )
+
+
+@router.get("/openlineage/status", response_model=OpenLineageStatusResponse)
+def openlineage_status(_: User = Depends(get_current_user)) -> OpenLineageStatusResponse:
+    return OpenLineageStatusResponse.model_validate(openlineage_service.get_status())
+
+
+@router.get("/openlineage/events", response_model=OpenLineageEventListResponse)
+def openlineage_events(
+    limit: int = Query(default=100, ge=1, le=500),
+    event_type: str | None = Query(default=None),
+    job_name: str | None = Query(default=None),
+    run_id: str | None = Query(default=None),
+    _: User = Depends(get_current_user),
+) -> OpenLineageEventListResponse:
+    return OpenLineageEventListResponse(
+        items=openlineage_service.list_events(
+            limit=limit,
+            event_type=event_type,
+            job_name=job_name,
+            run_id=run_id,
+        )
     )
 
 

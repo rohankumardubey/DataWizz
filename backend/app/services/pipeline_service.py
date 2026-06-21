@@ -9,6 +9,7 @@ from app.models.catalog import DeltaTable, UploadedFile
 from app.models.pipeline import JobLog, Pipeline, PipelineRun
 from app.services.delta_service import DeltaService
 from app.services.duckdb_service import DuckDBService
+from app.services.openlineage_service import openlineage_service
 from app.utils.naming import slugify_identifier
 
 
@@ -18,6 +19,63 @@ class PipelineService:
         self.delta_service = DeltaService()
         self.supported_join_types = {"inner", "left", "right", "full"}
         self.supported_aggregations = {"sum", "avg", "count", "min", "max"}
+
+    def _pipeline_input_datasets(
+        self,
+        pipeline: Pipeline,
+        uploaded_files: dict[str, UploadedFile],
+        delta_tables: dict[str, DeltaTable],
+    ) -> list[dict]:
+        datasets: list[dict] = []
+        for node in pipeline.definition_json.get("nodes", []):
+            config = self._node_config(node)
+            if node.get("type") == "fileSource":
+                record = uploaded_files.get(str(config.get("fileId") or ""))
+                if record is not None:
+                    datasets.append(
+                        openlineage_service.dataset(
+                            namespace="file://localhost",
+                            name=record.storage_path,
+                            fields=record.schema_json or [],
+                            facets={
+                                "datawizz": {
+                                    "assetKind": "uploaded_file",
+                                    "assetId": record.id,
+                                    "fileType": record.file_type,
+                                }
+                            },
+                        )
+                    )
+            elif node.get("type") == "deltaSource":
+                record = delta_tables.get(str(config.get("tableId") or ""))
+                if record is not None:
+                    datasets.append(self._delta_dataset(record))
+        return self._deduplicate_datasets(datasets)
+
+    def _delta_dataset(self, table: DeltaTable) -> dict:
+        return openlineage_service.dataset(
+            namespace=f"datawizz://delta/{table.schema_name}",
+            name=table.name,
+            fields=table.schema_json or [],
+            facets={
+                "datawizz": {
+                    "assetKind": "delta_table",
+                    "assetId": table.id,
+                    "storagePath": table.storage_path,
+                }
+            },
+        )
+
+    def _deduplicate_datasets(self, datasets: list[dict]) -> list[dict]:
+        seen: set[tuple[str, str]] = set()
+        unique: list[dict] = []
+        for dataset in datasets:
+            key = (str(dataset.get("namespace")), str(dataset.get("name")))
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(dataset)
+        return unique
 
     def _require_config(self, data: dict, key: str, node_id: str, node_type: str) -> str:
         value = data.get(key)
@@ -228,6 +286,24 @@ class PipelineService:
         db.add(run)
         db.commit()
         db.refresh(run)
+        lineage_inputs = self._pipeline_input_datasets(pipeline, uploaded_files, delta_tables)
+        lineage_outputs: list[dict] = []
+        lineage_job_name = f"pipeline.{slugify_identifier(pipeline.name)}"
+        lineage_run_facets = {
+            "datawizz": {
+                "pipelineId": pipeline.id,
+                "triggerType": trigger_type,
+                "retryOfRunId": retry_of_run_id,
+            }
+        }
+        openlineage_service.emit(
+            event_type="START",
+            job_name=lineage_job_name,
+            run_id=run.id,
+            inputs=lineage_inputs,
+            run_facets=lineage_run_facets,
+            job_facets={"datawizz": {"jobKind": "pipeline", "pipelineId": pipeline.id}},
+        )
 
         if not valid:
             run.status = "failed"
@@ -236,6 +312,21 @@ class PipelineService:
             run.run_summary = {"ordered_nodes": ordered_nodes, "issues": issues, "retry_of_run_id": retry_of_run_id}
             db.commit()
             self.create_log(db, run_id=run.id, level="ERROR", source="pipeline", message=run.error_message, status="failed")
+            openlineage_service.emit(
+                event_type="FAIL",
+                job_name=lineage_job_name,
+                run_id=run.id,
+                inputs=lineage_inputs,
+                run_facets={
+                    "datawizz": {
+                        **lineage_run_facets["datawizz"],
+                        "status": "failed",
+                        "error": run.error_message,
+                        "issues": issues,
+                    }
+                },
+                job_facets={"datawizz": {"jobKind": "pipeline", "pipelineId": pipeline.id}},
+            )
             return run
 
         conn = self.duckdb_service.connect()
@@ -371,6 +462,7 @@ class PipelineService:
                         description=config.get("description"),
                         source_query=f"Pipeline {pipeline.name} node {node_id}",
                     )
+                    lineage_outputs.append(self._delta_dataset(written))
                     conn.execute(f"CREATE OR REPLACE VIEW {view_name} AS SELECT * FROM {final_view}")
                     self.create_log(
                         db,
@@ -415,6 +507,22 @@ class PipelineService:
                 "retry_of_run_id": retry_of_run_id,
             }
             db.commit()
+            openlineage_service.emit(
+                event_type="COMPLETE",
+                job_name=lineage_job_name,
+                run_id=run.id,
+                inputs=lineage_inputs,
+                outputs=self._deduplicate_datasets(lineage_outputs),
+                run_facets={
+                    "datawizz": {
+                        **lineage_run_facets["datawizz"],
+                        "status": "success",
+                        "durationMs": run.duration_ms,
+                        "completedNodes": list(view_names.keys()),
+                    }
+                },
+                job_facets={"datawizz": {"jobKind": "pipeline", "pipelineId": pipeline.id}},
+            )
             return run
         except Exception as exc:
             run.status = "failed"
@@ -435,6 +543,24 @@ class PipelineService:
                 message=str(exc),
                 status="failed",
                 context_json={"node_id": current_node_id} if current_node_id else None,
+            )
+            openlineage_service.emit(
+                event_type="FAIL",
+                job_name=lineage_job_name,
+                run_id=run.id,
+                inputs=lineage_inputs,
+                outputs=self._deduplicate_datasets(lineage_outputs),
+                run_facets={
+                    "datawizz": {
+                        **lineage_run_facets["datawizz"],
+                        "status": "failed",
+                        "durationMs": run.duration_ms,
+                        "error": str(exc),
+                        "failedNodeId": current_node_id,
+                        "failedNodeType": current_node_type,
+                    }
+                },
+                job_facets={"datawizz": {"jobKind": "pipeline", "pipelineId": pipeline.id}},
             )
             return run
         finally:

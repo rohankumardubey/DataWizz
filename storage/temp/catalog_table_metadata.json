@@ -25,7 +25,55 @@
         "unexpected_percent": 0.0,
         "detail": "Observed 12 rows; expected between 1 and any."
       }
-    ]
+    ],
+    "contract_mode": "warn",
+    "contract_version": 1,
+    "contract_schema_json": [
+      {
+        "name": "order_id",
+        "type": "int64"
+      },
+      {
+        "name": "customer_id",
+        "type": "string"
+      },
+      {
+        "name": "order_date",
+        "type": "date32[day]"
+      },
+      {
+        "name": "region",
+        "type": "string"
+      },
+      {
+        "name": "product_category",
+        "type": "string"
+      },
+      {
+        "name": "revenue",
+        "type": "int64"
+      },
+      {
+        "name": "quantity",
+        "type": "int64"
+      }
+    ],
+    "contract_required_columns": [
+      "order_id",
+      "customer_id",
+      "order_date",
+      "region",
+      "product_category",
+      "revenue",
+      "quantity"
+    ],
+    "contract_allow_additive_columns": true,
+    "contract_allow_column_removal": false,
+    "contract_allow_type_changes": false,
+    "contract_last_check_status": "pass",
+    "contract_last_check_summary": "Published schema satisfies the active table contract.",
+    "contract_last_check_issues": [],
+    "contract_last_check_at": "2026-06-21T22:24:57.118865+00:00"
   },
   "48a53b15-819b-4b50-9d20-f8d28d0f2dab": {
     "freshness_status": "fresh"

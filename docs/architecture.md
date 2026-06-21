@@ -137,13 +137,29 @@ Curated Delta tables can retain reusable expectation-style quality suites in the
 
 Checks execute locally against the current Delta snapshot through DuckDB. The service boundary is intentionally independent from the UI and metadata registry so a Great Expectations adapter, scheduled runs, and pipeline quality gates can be added without replacing the catalog workflow.
 
+## Operational Lineage
+
+Pipeline and saved-notebook executions emit OpenLineage 2.x-compatible `RunEvent` payloads:
+
+- `START`, `COMPLETE`, and `FAIL` lifecycle events
+- stable DataWizz job namespaces and persisted run IDs
+- uploaded-file and Delta-table inputs resolved from pipeline source nodes
+- Delta outputs captured from successful pipeline write nodes
+- schema facets and a documented DataWizz custom facet
+- local JSONL retention under `storage/temp/openlineage/events.jsonl`
+- optional failure-isolated HTTP delivery to an external OpenLineage collector
+
+Lineage persistence and transport failures never fail the underlying workload. The in-app Lineage Events page reads the same retained payloads exposed through the system API.
+
+For external delivery, set `OPENLINEAGE_TRANSPORT_URL` to the collector's full ingestion endpoint, for example `http://localhost:5000/api/v1/lineage` for a local Marquez-compatible backend.
+
 ## Future-Ready Extension Points
 
 - Spark or DataFusion execution engines behind the query interface
 - MinIO-backed object storage paths and credentials
 - Airflow API trigger integration
 - Great Expectations execution adapter and pipeline quality gates
-- OpenLineage event emission
+- OpenLineage coverage for SQL, report, and quality-check executions
 - Trino or Nessie integration for richer lakehouse metadata
 
 ## Delivery and Portability Checks
@@ -169,6 +185,7 @@ Included in this first version:
 - Curated-table quality suites and on-demand quality runs
 - Visual pipeline builder with manual execution
 - Pipeline runs and logs
+- OpenLineage-compatible pipeline and notebook lifecycle events
 - Basic BI module with datasets, charts, and dashboards
 - Docker Compose setup for frontend, backend, PostgreSQL, and MinIO
 

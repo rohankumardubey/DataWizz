@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/rohankumardubey/DataWizz/main/docs/openlineage-facet.json",
+  "title": "DataWizz OpenLineage Facet",
+  "type": "object",
+  "required": ["_producer", "_schemaURL", "platform", "localFirst"],
+  "properties": {
+    "_producer": { "type": "string", "format": "uri" },
+    "_schemaURL": { "type": "string", "format": "uri" },
+    "platform": { "const": "DataWizz" },
+    "localFirst": { "type": "boolean" }
+  },
+  "additionalProperties": true
+}
