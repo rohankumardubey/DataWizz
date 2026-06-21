@@ -78,6 +78,9 @@ class CatalogMetadataService:
             "quality_last_run_summary": "Quality suite has not been run yet.",
             "quality_last_run_at": None,
             "quality_last_run_results": [],
+            "quality_schedule_cron": None,
+            "quality_schedule_enabled": False,
+            "quality_schedule_updated_at": None,
         }
 
     def get_contract(self, table: DeltaTable) -> dict:
@@ -146,6 +149,12 @@ class CatalogMetadataService:
             "quality_last_run_summary": stored.get("quality_last_run_summary", defaults["quality_last_run_summary"]),
             "quality_last_run_at": stored.get("quality_last_run_at", defaults["quality_last_run_at"]),
             "quality_last_run_results": stored.get("quality_last_run_results", defaults["quality_last_run_results"]),
+            "quality_schedule_cron": stored.get("quality_schedule_cron", defaults["quality_schedule_cron"]),
+            "quality_schedule_enabled": stored.get("quality_schedule_enabled", defaults["quality_schedule_enabled"]),
+            "quality_schedule_updated_at": stored.get(
+                "quality_schedule_updated_at",
+                defaults["quality_schedule_updated_at"],
+            ),
         }
 
     def update_quality_suite(self, table: DeltaTable, *, name: str, expectations: list[dict]) -> dict:
@@ -170,6 +179,17 @@ class CatalogMetadataService:
         current["quality_last_run_results"] = list(result.get("results") or [])
         registry[table.id] = current
         self._save_registry(registry)
+
+    def update_quality_schedule(self, table: DeltaTable, *, cron: str | None, enabled: bool) -> dict:
+        registry = self._load_registry()
+        current = registry.get(table.id, {})
+        normalized_cron = (cron or "").strip() or None
+        current["quality_schedule_cron"] = normalized_cron
+        current["quality_schedule_enabled"] = bool(enabled and normalized_cron)
+        current["quality_schedule_updated_at"] = datetime.now(timezone.utc).isoformat()
+        registry[table.id] = current
+        self._save_registry(registry)
+        return self.enrich_table(table)
 
     def enrich_table(self, table: DeltaTable) -> dict:
         payload = {

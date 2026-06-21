@@ -100,8 +100,12 @@ export type QualityExpectationResult = {
 }
 
 export type QualityRun = {
+  id: string
   table_id: string
+  pipeline_run_id?: string | null
+  node_id?: string | null
   suite_name: string
+  trigger_type: 'manual' | 'scheduled' | 'pipeline_gate' | string
   status: 'passed' | 'warning' | 'failed'
   success: boolean
   row_count: number
@@ -109,8 +113,28 @@ export type QualityRun = {
   passed_count: number
   failed_count: number
   summary: string
-  run_at: string
-  results: QualityExpectationResult[]
+  results_json: QualityExpectationResult[]
+  started_at: string
+  finished_at: string
+  duration_ms: number
+}
+
+export type QualitySchedulerSweep = {
+  checked: number
+  triggered: { table_id: string; table_name: string; quality_run_id: string; status: string }[]
+  invalid_schedules: { table_id: string; table_name: string; cron: string; reason: string }[]
+  next_due: { table_id: string; table_name: string; cron: string; next_run_at: string }[]
+}
+
+export type QualitySchedulerStatus = {
+  enabled: boolean
+  running: boolean
+  timezone: string
+  poll_interval_seconds: number
+  last_tick_at?: string | null
+  last_error?: string | null
+  managed_table_count: number
+  last_summary: QualitySchedulerSweep
 }
 
 export type DeltaTable = {
@@ -159,6 +183,9 @@ export type DeltaTable = {
   quality_last_run_summary?: string
   quality_last_run_at?: string | null
   quality_last_run_results?: QualityExpectationResult[]
+  quality_schedule_cron?: string | null
+  quality_schedule_enabled?: boolean
+  quality_schedule_updated_at?: string | null
   created_at: string
   updated_at: string
 }

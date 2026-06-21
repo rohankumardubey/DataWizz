@@ -213,6 +213,7 @@ Notes:
 
 - The backend targets PostgreSQL by default.
 - For quick local demos, the launcher can use SQLite-backed metadata automatically.
+- Local SQLite metadata is stored outside the repository at `${DATAWIZZ_LOCAL_DATABASE_PATH:-${DATAWIZZ_CACHE_DIR:-$HOME/.cache/datawizz}/local/metadata.db}`. This prevents Git operations and cloud-sync clients from replacing a database while the backend is running.
 - Superset is pinned to version `6.1.0`. On the first no-Docker launch, `run.sh` installs the native runtime in the machine-local DataWizz cache and initializes its metadata before reporting it healthy.
 - Later launches skip migrations and admin bootstrap, start the prepared runtime directly, verify the process and health endpoint, and provision the shared DuckDB catalog only when it is missing.
 - The native Superset package cache lives outside the repository (`${XDG_CACHE_HOME:-$HOME/.cache}/datawizz` by default), so cloud-synced workspaces and moved clones do not repeatedly download or slowly import hundreds of megabytes of Python packages. Set `DATAWIZZ_CACHE_DIR` to override it.
@@ -348,7 +349,7 @@ The repository-integrity check specifically verifies that critical frontend libr
 - File Explorer drag-and-drop uploads, schema and row preview, deep column profiling, and profile-driven recommendations
 - SQL Workspace querying, export, and Delta publishing backed by DuckDB
 - Catalog governance editing, quality and freshness signals, data contract guardrails, lineage relationships, and mini lineage graph drill-down
-- Curated-table quality suites with minimum-row, not-null, uniqueness, and accepted-value expectations plus persisted run evidence
+- Curated-table quality suites with minimum-row, not-null, uniqueness, and accepted-value expectations, persisted run history, cron schedules, and pipeline quality gates
 - Visual pipeline builder validation, join and aggregation guardrails, retries, logs filtering, and recurring scheduler execution
 - OpenLineage-compatible pipeline and notebook lifecycle events with local retention, dataset inputs/outputs, and optional HTTP delivery
 - Engine Lab notebooks with DuckDB, PySpark, and DataFusion runtimes, saved snippets, collaboration basics, and persisted cell outputs
@@ -359,7 +360,7 @@ The repository-integrity check specifically verifies that critical frontend libr
 ### Next
 
 - Flink streaming support
-- Great Expectations adapter, scheduled quality runs, and pipeline quality gates
+- Great Expectations execution adapter and richer quality remediation actions
 - OpenLineage coverage for SQL, reports, quality runs, and additional external transport authentication modes
 - Hive Metastore or Nessie-backed catalog options
 - Notebook export artifacts and richer collaboration flows

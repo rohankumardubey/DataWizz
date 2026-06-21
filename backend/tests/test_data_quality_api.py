@@ -75,3 +75,25 @@ def test_quality_suite_can_be_saved_and_run_through_api() -> None:
         assert run.status_code == 200
         assert run.json()["status"] == "passed"
         assert run.json()["passed_count"] == 2
+
+        history = client.get(f"/api/tables/{table_id}/quality-runs", headers=headers)
+        assert history.status_code == 200
+        assert history.json()["items"][0]["id"] == run.json()["id"]
+        assert history.json()["items"][0]["trigger_type"] == "manual"
+
+        schedule = client.put(
+            f"/api/tables/{table_id}/quality-schedule",
+            headers=headers,
+            json={"cron": "0 7 * * *", "enabled": True},
+        )
+        assert schedule.status_code == 200
+        assert schedule.json()["quality_schedule_enabled"] is True
+        assert schedule.json()["quality_schedule_cron"] == "0 7 * * *"
+
+        scheduler_status = client.get("/api/tables/quality-scheduler/status", headers=headers)
+        assert scheduler_status.status_code == 200
+        assert scheduler_status.json()["managed_table_count"] >= 1
+
+        scheduler_sweep = client.post("/api/tables/quality-scheduler/run-due", headers=headers)
+        assert scheduler_sweep.status_code == 200
+        assert scheduler_sweep.json()["checked"] >= 1

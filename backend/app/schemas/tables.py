@@ -43,6 +43,9 @@ class DeltaTableRead(TimestampedModel):
     quality_last_run_summary: str | None = None
     quality_last_run_at: datetime | None = None
     quality_last_run_results: list[dict] | None = None
+    quality_schedule_cron: str | None = None
+    quality_schedule_enabled: bool | None = None
+    quality_schedule_updated_at: datetime | None = None
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 
@@ -108,8 +111,12 @@ class QualitySuiteUpdateRequest(BaseModel):
 
 
 class QualityRunResponse(BaseModel):
+    id: str
     table_id: str
+    pipeline_run_id: str | None = None
+    node_id: str | None = None
     suite_name: str
+    trigger_type: str
     status: str
     success: bool
     row_count: int
@@ -117,5 +124,36 @@ class QualityRunResponse(BaseModel):
     passed_count: int
     failed_count: int
     summary: str
-    run_at: datetime
-    results: list[dict]
+    results_json: list[dict]
+    started_at: datetime
+    finished_at: datetime
+    duration_ms: int
+
+    model_config = {"from_attributes": True}
+
+
+class QualityRunListResponse(BaseModel):
+    items: list[QualityRunResponse]
+
+
+class QualityScheduleUpdateRequest(BaseModel):
+    cron: str | None = None
+    enabled: bool = False
+
+
+class QualitySchedulerSweepResponse(BaseModel):
+    checked: int
+    triggered: list[dict] = Field(default_factory=list)
+    invalid_schedules: list[dict] = Field(default_factory=list)
+    next_due: list[dict] = Field(default_factory=list)
+
+
+class QualitySchedulerStatusResponse(BaseModel):
+    enabled: bool
+    running: bool
+    timezone: str
+    poll_interval_seconds: int
+    last_tick_at: str | None = None
+    last_error: str | None = None
+    managed_table_count: int
+    last_summary: QualitySchedulerSweepResponse

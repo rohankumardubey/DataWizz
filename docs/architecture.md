@@ -15,6 +15,7 @@ The MVP delivers an internal, demo-ready lakehouse platform that combines:
 
 - Clean separation between UI, API, execution engine, and metadata store
 - Local-first developer experience with Docker support for demos
+- Machine-local SQLite metadata outside the synced repository for safe demo-mode writes
 - Open-source execution path that can evolve toward Spark, Flink, Trino, or Airflow later
 - Modular services so ingestion, SQL, orchestration, and BI can grow independently
 
@@ -78,6 +79,7 @@ Metadata lives in PostgreSQL and includes:
 - users
 - uploaded_files
 - delta_tables
+- quality_runs
 - queries
 - pipelines
 - pipeline_runs
@@ -133,9 +135,11 @@ Curated Delta tables can retain reusable expectation-style quality suites in the
 - not-null column expectations
 - uniqueness expectations for non-null values
 - accepted-value expectations
-- persisted latest-run status, summary, evidence, and unexpected-row percentages
+- persisted latest-run status plus full historical run evidence and unexpected-row percentages
+- per-table cron schedules executed by the local scheduler
+- post-write pipeline gates with `off`, `warn`, and `block` modes
 
-Checks execute locally against the current Delta snapshot through DuckDB. The service boundary is intentionally independent from the UI and metadata registry so a Great Expectations adapter, scheduled runs, and pipeline quality gates can be added without replacing the catalog workflow.
+Checks execute locally against the current Delta snapshot through DuckDB. Manual, scheduled, and pipeline-triggered runs are persisted in `quality_runs` and emit OpenLineage lifecycle events. A blocking gate fails the pipeline after the Delta write when an error-severity expectation fails; it does not roll back the already-published Delta version. The service boundary remains suitable for a future Great Expectations execution adapter without replacing the catalog workflow.
 
 ## Operational Lineage
 
@@ -158,8 +162,8 @@ For external delivery, set `OPENLINEAGE_TRANSPORT_URL` to the collector's full i
 - Spark or DataFusion execution engines behind the query interface
 - MinIO-backed object storage paths and credentials
 - Airflow API trigger integration
-- Great Expectations execution adapter and pipeline quality gates
-- OpenLineage coverage for SQL, report, and quality-check executions
+- Great Expectations execution adapter and richer remediation actions
+- OpenLineage coverage for SQL and report executions
 - Trino or Nessie integration for richer lakehouse metadata
 
 ## Delivery and Portability Checks
@@ -182,7 +186,7 @@ Included in this first version:
 - SQL execution with DuckDB
 - Write query results to Delta Lake
 - Delta catalog browsing
-- Curated-table quality suites and on-demand quality runs
+- Curated-table quality suites, persisted validation history, cron schedules, and pipeline quality gates
 - Visual pipeline builder with manual execution
 - Pipeline runs and logs
 - OpenLineage-compatible pipeline and notebook lifecycle events
@@ -193,5 +197,5 @@ Deferred but documented as TODOs:
 
 - external Airflow execution
 - Flink streaming
-- scheduled Great Expectations runs and pipeline quality gates
+- Great Expectations execution adapter
 - production observability and Kubernetes deployment

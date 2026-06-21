@@ -85,7 +85,7 @@ const nodeDefaults: Record<PipelineNodeType, { label: string; config: Record<str
   aggregate: { label: 'Aggregate', config: { groupBy: [], metrics: [{ agg: 'sum', column: 'revenue', alias: 'total_revenue' }] } },
   sql: { label: 'SQL Transform', config: { sql: 'SELECT * FROM {{input_1}}' } },
   validate: { label: 'Validate Data', config: { minRows: 1 } },
-  writeDelta: { label: 'Write Delta', config: { tableName: 'sales_curated', schemaName: 'analytics', mode: 'overwrite', description: '' } },
+  writeDelta: { label: 'Write Delta', config: { tableName: 'sales_curated', schemaName: 'analytics', mode: 'overwrite', description: '', qualityGate: 'off' } },
   schedule: { label: 'Schedule', config: { cron: '0 8 * * *', note: 'Daily 8 AM refresh' } },
 }
 
@@ -180,7 +180,7 @@ function describeNode(data: BuilderNodeData) {
     case 'validate':
       return `Minimum rows: ${String(config.minRows || 1)}`
     case 'writeDelta':
-      return String(config.tableName || 'Target table')
+      return `${String(config.tableName || 'Target table')} · quality ${String(config.qualityGate || 'off')}`
     case 'schedule':
       return String(config.cron || 'No schedule')
     default:
@@ -364,6 +364,10 @@ function buildGuardrails(
       const mode = String(config.mode ?? 'overwrite').trim()
       if (!['overwrite', 'append'].includes(mode)) {
         issues.push({ nodeId: node.id, severity: 'error', message: 'Write mode must be overwrite or append.' })
+      }
+      const qualityGate = String(config.qualityGate ?? 'off').trim()
+      if (!['off', 'warn', 'block'].includes(qualityGate)) {
+        issues.push({ nodeId: node.id, severity: 'error', message: 'Quality gate must be off, warn, or block.' })
       }
     }
     if (!['fileSource', 'deltaSource', 'schedule'].includes(String(node.type)) && incoming.length === 0) {
@@ -752,6 +756,17 @@ function NodeFields({ node, availableFiles, availableTables, updateConfig, input
               <option value="overwrite">overwrite</option>
               <option value="append">append</option>
             </Select>
+          </div>
+          <div>
+            <Label>Post-write Quality Gate</Label>
+            <Select value={String(config.qualityGate ?? 'off')} onChange={(event) => updateConfig({ qualityGate: event.target.value })}>
+              <option value="off">Off — do not run the table suite</option>
+              <option value="warn">Warn — record failures and continue</option>
+              <option value="block">Block — stop downstream nodes on critical failures</option>
+            </Select>
+            <p className="mt-2 text-xs leading-5 text-slate/65">
+              The gate runs the target table&apos;s saved quality suite immediately after the Delta write.
+            </p>
           </div>
           <div>
             <Label>Description</Label>

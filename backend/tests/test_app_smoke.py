@@ -9,6 +9,10 @@ def test_health_and_seeded_admin_login() -> None:
         assert health.status_code == 200
         assert health.json() == {"status": "ok"}
 
+        readiness = client.get("/health/ready")
+        assert readiness.status_code == 200
+        assert readiness.json() == {"status": "ready"}
+
         login = client.post(
             "/api/system/login",
             json={"email": "admin@datawizz.local", "password": "datawizz123"},

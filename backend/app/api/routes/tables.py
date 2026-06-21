@@ -1,9 +1,10 @@
+from croniter import croniter
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import require_roles
 from app.db.session import get_db
-from app.models.catalog import DeltaTable
+from app.models.catalog import DeltaTable, QualityRun
 from app.schemas.table_lineage import TableLineageResponse
 from app.schemas.tables import (
     DeltaTableContractUpdateRequest,
@@ -12,6 +13,10 @@ from app.schemas.tables import (
     DeltaTablePreviewResponse,
     DeltaTableRead,
     QualityRunResponse,
+    QualityRunListResponse,
+    QualityScheduleUpdateRequest,
+    QualitySchedulerStatusResponse,
+    QualitySchedulerSweepResponse,
     QualitySuiteUpdateRequest,
 )
 from app.services.catalog_governance_service import catalog_governance_service
@@ -20,6 +25,7 @@ from app.services.catalog_metadata_service import CatalogMetadataService
 from app.services.delta_service import DeltaService
 from app.services.duckdb_service import DuckDBService
 from app.services.data_quality_service import data_quality_service
+from app.services.quality_scheduler_service import quality_scheduler_service
 from app.services.superset_catalog_service import superset_catalog_service
 
 
@@ -144,11 +150,59 @@ def run_quality_suite(table_id: str, db: Session = Depends(get_db)) -> QualityRu
     table = db.query(DeltaTable).filter(DeltaTable.id == table_id).one_or_none()
     if table is None:
         raise HTTPException(status_code=404, detail="Delta table not found")
-    suite = catalog_metadata_service.get_quality_suite(table)
-    result = data_quality_service.run(
-        table,
-        suite["quality_expectations"],
-        suite_name=suite["quality_suite_name"],
+    return QualityRunResponse.model_validate(data_quality_service.execute(db, table, trigger_type="manual"))
+
+
+@router.get("/{table_id}/quality-runs", response_model=QualityRunListResponse)
+def list_quality_runs(table_id: str, db: Session = Depends(get_db)) -> QualityRunListResponse:
+    table = db.query(DeltaTable).filter(DeltaTable.id == table_id).one_or_none()
+    if table is None:
+        raise HTTPException(status_code=404, detail="Delta table not found")
+    items = (
+        db.query(QualityRun)
+        .filter(QualityRun.table_id == table_id)
+        .order_by(QualityRun.started_at.desc())
+        .limit(100)
+        .all()
     )
-    catalog_metadata_service.record_quality_run(table, result)
-    return QualityRunResponse.model_validate(result)
+    return QualityRunListResponse(items=[QualityRunResponse.model_validate(item) for item in items])
+
+
+@router.put("/{table_id}/quality-schedule", response_model=DeltaTableRead, dependencies=[Depends(require_roles("admin", "analyst"))])
+def update_quality_schedule(
+    table_id: str,
+    payload: QualityScheduleUpdateRequest,
+    db: Session = Depends(get_db),
+) -> DeltaTableRead:
+    table = db.query(DeltaTable).filter(DeltaTable.id == table_id).one_or_none()
+    if table is None:
+        raise HTTPException(status_code=404, detail="Delta table not found")
+    if payload.enabled and not (payload.cron or "").strip():
+        raise HTTPException(status_code=400, detail="A cron expression is required when quality scheduling is enabled.")
+    if (payload.cron or "").strip() and not croniter.is_valid(payload.cron):
+        raise HTTPException(status_code=400, detail="Invalid quality schedule cron expression.")
+    enriched = catalog_metadata_service.update_quality_schedule(
+        table,
+        cron=payload.cron,
+        enabled=payload.enabled,
+    )
+    lineage = catalog_lineage_service.build_table_lineage(db, table)
+    governed = catalog_metadata_service.attach_governance(
+        enriched,
+        catalog_governance_service.build_score(table, enriched, lineage),
+    )
+    return DeltaTableRead.model_validate(governed)
+
+
+@router.get("/quality-scheduler/status", response_model=QualitySchedulerStatusResponse)
+def get_quality_scheduler_status() -> QualitySchedulerStatusResponse:
+    return QualitySchedulerStatusResponse.model_validate(quality_scheduler_service.get_status())
+
+
+@router.post(
+    "/quality-scheduler/run-due",
+    response_model=QualitySchedulerSweepResponse,
+    dependencies=[Depends(require_roles("admin"))],
+)
+def run_due_quality_schedules() -> QualitySchedulerSweepResponse:
+    return QualitySchedulerSweepResponse.model_validate(quality_scheduler_service.run_due_once())
