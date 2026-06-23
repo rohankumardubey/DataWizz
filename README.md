@@ -98,6 +98,7 @@ It is especially useful when you want to demonstrate:
 - SQL querying over CSV, JSON, Parquet, and curated Delta tables
 - Write query outputs to Delta Lake with append or overwrite modes
 - Catalog browsing with metadata, freshness, ownership, tags, and lineage hints
+- Reusable data-quality suites with selectable native DuckDB or Great Expectations execution
 - Theme-aware workspace shell with dark and light presentation modes
 
 ### Notebook Runtime
@@ -349,7 +350,7 @@ The repository-integrity check specifically verifies that critical frontend libr
 - File Explorer drag-and-drop uploads, schema and row preview, deep column profiling, and profile-driven recommendations
 - SQL Workspace querying, export, and Delta publishing backed by DuckDB
 - Catalog governance editing, quality and freshness signals, data contract guardrails, lineage relationships, and mini lineage graph drill-down
-- Curated-table quality suites with minimum-row, not-null, uniqueness, and accepted-value expectations, persisted run history, cron schedules, and pipeline quality gates
+- Curated-table quality suites with native DuckDB or Great Expectations execution, persisted run history, cron schedules, and pipeline quality gates
 - Visual pipeline builder validation, join and aggregation guardrails, retries, logs filtering, and recurring scheduler execution
 - OpenLineage-compatible pipeline and notebook lifecycle events with local retention, dataset inputs/outputs, and optional HTTP delivery
 - Engine Lab notebooks with DuckDB, PySpark, and DataFusion runtimes, saved snippets, collaboration basics, and persisted cell outputs
@@ -360,8 +361,8 @@ The repository-integrity check specifically verifies that critical frontend libr
 ### Next
 
 - Flink streaming support
-- Great Expectations execution adapter and richer quality remediation actions
-- OpenLineage coverage for SQL, reports, quality runs, and additional external transport authentication modes
+- Transactional quarantine/remediation actions for failed quality gates
+- OpenLineage coverage for SQL and reports plus additional external transport authentication modes
 - Hive Metastore or Nessie-backed catalog options
 - Notebook export artifacts and richer collaboration flows
 - Natural-language chart generation

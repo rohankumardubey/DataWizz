@@ -14,6 +14,7 @@ from app.schemas.tables import (
     DeltaTableRead,
     QualityRunResponse,
     QualityRunListResponse,
+    QualityEngineStatusResponse,
     QualityScheduleUpdateRequest,
     QualitySchedulerStatusResponse,
     QualitySchedulerSweepResponse,
@@ -136,6 +137,7 @@ def update_quality_suite(table_id: str, payload: QualitySuiteUpdateRequest, db: 
         table,
         name=payload.name,
         expectations=[expectation.model_dump() for expectation in payload.expectations],
+        execution_engine=payload.execution_engine,
     )
     lineage = catalog_lineage_service.build_table_lineage(db, table)
     governed = catalog_metadata_service.attach_governance(
@@ -166,6 +168,11 @@ def list_quality_runs(table_id: str, db: Session = Depends(get_db)) -> QualityRu
         .all()
     )
     return QualityRunListResponse(items=[QualityRunResponse.model_validate(item) for item in items])
+
+
+@router.get("/quality-engines/status", response_model=QualityEngineStatusResponse)
+def get_quality_engine_status() -> QualityEngineStatusResponse:
+    return QualityEngineStatusResponse.model_validate(data_quality_service.get_engine_status())
 
 
 @router.put("/{table_id}/quality-schedule", response_model=DeltaTableRead, dependencies=[Depends(require_roles("admin", "analyst"))])

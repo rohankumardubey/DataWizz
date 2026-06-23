@@ -104,6 +104,7 @@ export function CatalogPage() {
   const [qualityMinRowsDraft, setQualityMinRowsDraft] = useState('1')
   const [qualityNotNullDraft, setQualityNotNullDraft] = useState('')
   const [qualityUniqueDraft, setQualityUniqueDraft] = useState('')
+  const [qualityExecutionEngineDraft, setQualityExecutionEngineDraft] = useState<'native' | 'great_expectations'>('native')
   const [qualityScheduleCronDraft, setQualityScheduleCronDraft] = useState('')
   const [qualityScheduleEnabledDraft, setQualityScheduleEnabledDraft] = useState(false)
   const [lineageFocus, setLineageFocus] = useState<LineageFocus>('upstream')
@@ -124,6 +125,10 @@ export function CatalogPage() {
     queryKey: ['tables', selectedTableId, 'quality-runs'],
     queryFn: () => api.listTableQualityRuns(selectedTableId!),
     enabled: Boolean(selectedTableId),
+  })
+  const qualityEngineQuery = useQuery({
+    queryKey: ['quality-engines'],
+    queryFn: api.getQualityEngineStatus,
   })
   const qualitySchedulerQuery = useQuery({
     queryKey: ['quality-scheduler'],
@@ -182,6 +187,7 @@ export function CatalogPage() {
       minRows: number
       notNullColumns: string[]
       uniqueColumns: string[]
+      executionEngine: 'native' | 'great_expectations'
     }) => {
       const existingAcceptedValueRules =
         tables
@@ -189,6 +195,7 @@ export function CatalogPage() {
           ?.quality_expectations?.filter((expectation) => expectation.expectation_type === 'accepted_values') ?? []
       return api.updateTableQualitySuite(payload.tableId, {
         name: payload.name,
+        execution_engine: payload.executionEngine,
         expectations: [
           {
             id: 'minimum-row-count',
@@ -360,6 +367,7 @@ export function CatalogPage() {
         .filter(Boolean)
         .join(', '),
     )
+    setQualityExecutionEngineDraft(selectedTable.quality_execution_engine ?? 'native')
     setQualityScheduleCronDraft(selectedTable.quality_schedule_cron ?? '')
     setQualityScheduleEnabledDraft(selectedTable.quality_schedule_enabled ?? false)
     setStatusMessage(`Inspecting ${selectedTable.schema_name}.${selectedTable.name}.`)
@@ -993,6 +1001,9 @@ export function CatalogPage() {
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-violet-700">
+                        {selectedTable.quality_execution_engine === 'great_expectations' ? 'Great Expectations' : 'DataWizz Native'}
+                      </span>
                       <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${qualityTone(selectedTable.quality_last_run_status)}`}>
                         {selectedTable.quality_last_run_status ?? 'untracked'}
                       </span>
@@ -1078,6 +1089,33 @@ export function CatalogPage() {
                         <Label>Suite Name</Label>
                         <Input value={qualitySuiteNameDraft} onChange={(event) => setQualitySuiteNameDraft(event.target.value)} />
                       </div>
+                      <div>
+                        <Label>Execution Engine</Label>
+                        <Select
+                          value={qualityExecutionEngineDraft}
+                          onChange={(event) =>
+                            setQualityExecutionEngineDraft(event.target.value as 'native' | 'great_expectations')
+                          }
+                        >
+                          {(qualityEngineQuery.data?.engines ?? []).map((engine) => (
+                            <option key={engine.name} value={engine.name} disabled={!engine.available}>
+                              {engine.label}
+                              {engine.version ? ` ${engine.version}` : ''}
+                              {!engine.available ? ' (unavailable)' : ''}
+                            </option>
+                          ))}
+                          {!qualityEngineQuery.data ? (
+                            <>
+                              <option value="native">DataWizz Native</option>
+                              <option value="great_expectations">Great Expectations</option>
+                            </>
+                          ) : null}
+                        </Select>
+                        <p className="mt-2 text-sm text-slate/70">
+                          {qualityEngineQuery.data?.engines.find((engine) => engine.name === qualityExecutionEngineDraft)?.detail ??
+                            'Choose the runtime that evaluates this reusable suite.'}
+                        </p>
+                      </div>
                       <div className="grid gap-4 md:grid-cols-3">
                         <div>
                           <Label>Minimum Rows</Label>
@@ -1125,6 +1163,7 @@ export function CatalogPage() {
                               minRows: Math.max(Number.parseInt(qualityMinRowsDraft || '0', 10), 0),
                               notNullColumns: commaSeparatedValues(qualityNotNullDraft),
                               uniqueColumns: commaSeparatedValues(qualityUniqueDraft),
+                              executionEngine: qualityExecutionEngineDraft,
                             })
                           }
                         >
@@ -1226,6 +1265,8 @@ export function CatalogPage() {
                               </div>
                               <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate/55">
                                 <span>{run.trigger_type.replace(/_/g, ' ')}</span>
+                                <span>·</span>
+                                <span>{run.execution_engine === 'great_expectations' ? 'Great Expectations' : 'DataWizz Native'}</span>
                                 <span>·</span>
                                 <span>{formatDate(run.started_at)}</span>
                                 {run.pipeline_run_id ? <span>· Pipeline run {run.pipeline_run_id}</span> : null}

@@ -135,11 +135,12 @@ Curated Delta tables can retain reusable expectation-style quality suites in the
 - not-null column expectations
 - uniqueness expectations for non-null values
 - accepted-value expectations
+- per-table execution through either the lightweight native DuckDB engine or Great Expectations Core
 - persisted latest-run status plus full historical run evidence and unexpected-row percentages
 - per-table cron schedules executed by the local scheduler
 - post-write pipeline gates with `off`, `warn`, and `block` modes
 
-Checks execute locally against the current Delta snapshot through DuckDB. Manual, scheduled, and pipeline-triggered runs are persisted in `quality_runs` and emit OpenLineage lifecycle events. A blocking gate fails the pipeline after the Delta write when an error-severity expectation fails; it does not roll back the already-published Delta version. The service boundary remains suitable for a future Great Expectations execution adapter without replacing the catalog workflow.
+Checks execute locally against the current Delta snapshot. The native engine evaluates expectations directly with DuckDB; the Great Expectations adapter creates an ephemeral pandas Data Source over the Delta snapshot and returns GX-native evidence. Manual, scheduled, and pipeline-triggered runs use the table's selected engine, persist that engine in `quality_runs`, and emit OpenLineage lifecycle events. A blocking gate fails the pipeline after the Delta write when an error-severity expectation fails; it does not roll back the already-published Delta version.
 
 ## Operational Lineage
 
@@ -162,7 +163,7 @@ For external delivery, set `OPENLINEAGE_TRANSPORT_URL` to the collector's full i
 - Spark or DataFusion execution engines behind the query interface
 - MinIO-backed object storage paths and credentials
 - Airflow API trigger integration
-- Great Expectations execution adapter and richer remediation actions
+- Transactional quarantine and richer quality remediation actions
 - OpenLineage coverage for SQL and report executions
 - Trino or Nessie integration for richer lakehouse metadata
 
@@ -197,5 +198,5 @@ Deferred but documented as TODOs:
 
 - external Airflow execution
 - Flink streaming
-- Great Expectations execution adapter
+- transactional quarantine/remediation for failed quality gates
 - production observability and Kubernetes deployment

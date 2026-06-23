@@ -105,6 +105,7 @@ export type QualityRun = {
   pipeline_run_id?: string | null
   node_id?: string | null
   suite_name: string
+  execution_engine: 'native' | 'great_expectations' | string
   trigger_type: 'manual' | 'scheduled' | 'pipeline_gate' | string
   status: 'passed' | 'warning' | 'failed'
   success: boolean
@@ -117,6 +118,17 @@ export type QualityRun = {
   started_at: string
   finished_at: string
   duration_ms: number
+}
+
+export type QualityEngineStatus = {
+  default_engine: string
+  engines: {
+    name: 'native' | 'great_expectations' | string
+    label: string
+    available: boolean
+    version?: string | null
+    detail: string
+  }[]
 }
 
 export type QualitySchedulerSweep = {
@@ -183,6 +195,7 @@ export type DeltaTable = {
   quality_last_run_summary?: string
   quality_last_run_at?: string | null
   quality_last_run_results?: QualityExpectationResult[]
+  quality_execution_engine?: 'native' | 'great_expectations'
   quality_schedule_cron?: string | null
   quality_schedule_enabled?: boolean
   quality_schedule_updated_at?: string | null

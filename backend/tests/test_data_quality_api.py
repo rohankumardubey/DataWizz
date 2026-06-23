@@ -50,6 +50,7 @@ def test_quality_suite_can_be_saved_and_run_through_api() -> None:
             headers=headers,
             json={
                 "name": "Orders baseline",
+                "execution_engine": "great_expectations",
                 "expectations": [
                     {
                         "id": "has-rows",
@@ -70,9 +71,17 @@ def test_quality_suite_can_be_saved_and_run_through_api() -> None:
         )
         assert saved.status_code == 200
         assert saved.json()["quality_suite_name"] == "Orders baseline"
+        assert saved.json()["quality_execution_engine"] == "great_expectations"
+
+        engines = client.get("/api/tables/quality-engines/status", headers=headers)
+        assert engines.status_code == 200
+        gx_engine = next(item for item in engines.json()["engines"] if item["name"] == "great_expectations")
+        assert gx_engine["available"] is True
+        assert gx_engine["version"] == "1.18.1"
 
         run = client.post(f"/api/tables/{table_id}/quality-runs", headers=headers)
         assert run.status_code == 200
+        assert run.json()["execution_engine"] == "great_expectations"
         assert run.json()["status"] == "passed"
         assert run.json()["passed_count"] == 2
 

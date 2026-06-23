@@ -43,6 +43,7 @@ class DeltaTableRead(TimestampedModel):
     quality_last_run_summary: str | None = None
     quality_last_run_at: datetime | None = None
     quality_last_run_results: list[dict] | None = None
+    quality_execution_engine: str | None = None
     quality_schedule_cron: str | None = None
     quality_schedule_enabled: bool | None = None
     quality_schedule_updated_at: datetime | None = None
@@ -100,6 +101,7 @@ class QualityExpectation(BaseModel):
 
 class QualitySuiteUpdateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
+    execution_engine: str = Field(default="native", pattern="^(native|great_expectations)$")
     expectations: list[QualityExpectation] = Field(min_length=1, max_length=100)
 
     @model_validator(mode="after")
@@ -116,6 +118,7 @@ class QualityRunResponse(BaseModel):
     pipeline_run_id: str | None = None
     node_id: str | None = None
     suite_name: str
+    execution_engine: str
     trigger_type: str
     status: str
     success: bool
@@ -134,6 +137,11 @@ class QualityRunResponse(BaseModel):
 
 class QualityRunListResponse(BaseModel):
     items: list[QualityRunResponse]
+
+
+class QualityEngineStatusResponse(BaseModel):
+    default_engine: str
+    engines: list[dict]
 
 
 class QualityScheduleUpdateRequest(BaseModel):

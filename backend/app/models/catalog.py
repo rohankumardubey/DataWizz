@@ -52,6 +52,7 @@ class QualityRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     pipeline_run_id: Mapped[str | None] = mapped_column(ForeignKey("pipeline_runs.id", ondelete="SET NULL"), nullable=True)
     node_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     suite_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    execution_engine: Mapped[str] = mapped_column(String(64), default="native", nullable=False)
     trigger_type: Mapped[str] = mapped_column(String(32), default="manual", nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     success: Mapped[bool] = mapped_column(nullable=False)

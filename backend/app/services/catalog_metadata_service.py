@@ -78,6 +78,7 @@ class CatalogMetadataService:
             "quality_last_run_summary": "Quality suite has not been run yet.",
             "quality_last_run_at": None,
             "quality_last_run_results": [],
+            "quality_execution_engine": "native",
             "quality_schedule_cron": None,
             "quality_schedule_enabled": False,
             "quality_schedule_updated_at": None,
@@ -149,6 +150,10 @@ class CatalogMetadataService:
             "quality_last_run_summary": stored.get("quality_last_run_summary", defaults["quality_last_run_summary"]),
             "quality_last_run_at": stored.get("quality_last_run_at", defaults["quality_last_run_at"]),
             "quality_last_run_results": stored.get("quality_last_run_results", defaults["quality_last_run_results"]),
+            "quality_execution_engine": stored.get(
+                "quality_execution_engine",
+                defaults["quality_execution_engine"],
+            ),
             "quality_schedule_cron": stored.get("quality_schedule_cron", defaults["quality_schedule_cron"]),
             "quality_schedule_enabled": stored.get("quality_schedule_enabled", defaults["quality_schedule_enabled"]),
             "quality_schedule_updated_at": stored.get(
@@ -157,11 +162,19 @@ class CatalogMetadataService:
             ),
         }
 
-    def update_quality_suite(self, table: DeltaTable, *, name: str, expectations: list[dict]) -> dict:
+    def update_quality_suite(
+        self,
+        table: DeltaTable,
+        *,
+        name: str,
+        expectations: list[dict],
+        execution_engine: str = "native",
+    ) -> dict:
         registry = self._load_registry()
         current = registry.get(table.id, {})
         current["quality_suite_name"] = name.strip() or f"{table.schema_name}.{table.name} baseline"
         current["quality_expectations"] = expectations
+        current["quality_execution_engine"] = execution_engine
         current["quality_last_run_status"] = "untracked"
         current["quality_last_run_summary"] = "Quality suite changed and needs to be run."
         current["quality_last_run_at"] = None
