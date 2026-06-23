@@ -69,3 +69,47 @@ def test_quality_suite_reports_expectation_evidence(tmp_path: Path) -> None:
     assert result["failed_count"] == 2
     assert result["results"][1]["unexpected_count"] == 1
     assert result["results"][2]["unexpected_count"] == 1
+
+
+def test_great_expectations_adapter_reports_framework_evidence(tmp_path: Path) -> None:
+    table_path = tmp_path / "gx_orders"
+    write_deltalake(
+        str(table_path),
+        pa.table({"order_id": [1, 2, 2], "status": ["complete", None, "pending"]}),
+        mode="overwrite",
+    )
+    table = DeltaTable(
+        id="gx-orders-table",
+        name="gx_orders",
+        schema_name="analytics",
+        storage_path=str(table_path),
+        mode="overwrite",
+    )
+
+    result = DataQualityService().run(
+        table,
+        [
+            {
+                "id": "status-required",
+                "expectation_type": "not_null",
+                "enabled": True,
+                "severity": "error",
+                "column": "status",
+            },
+            {
+                "id": "order-id-unique",
+                "expectation_type": "unique",
+                "enabled": True,
+                "severity": "warning",
+                "column": "order_id",
+            },
+        ],
+        execution_engine="great_expectations",
+    )
+
+    assert result["engine"] == "great_expectations"
+    assert result["status"] == "failed"
+    assert result["failed_count"] == 2
+    assert result["results"][0]["framework_expectation"] == "expect_column_values_to_not_be_null"
+    assert result["results"][0]["unexpected_count"] == 1
+    assert result["results"][1]["unexpected_count"] == 2

@@ -86,7 +86,7 @@ export function DashboardPage() {
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Pending Product Work</p>
           <ul className="mt-4 space-y-3 text-sm leading-6 text-slate-700">
             <li>Flink streaming and external Airflow execution are not wired yet.</li>
-            <li>Quality suites now support history, cron schedules, and post-write pipeline gates; a Great Expectations adapter is still pending.</li>
+            <li>Quality suites support native or Great Expectations execution; transactional quarantine and remediation actions are still pending.</li>
             <li>OpenLineage covers pipelines, notebooks, and quality runs; SQL and report executions need the same instrumentation next.</li>
           </ul>
         </Panel>

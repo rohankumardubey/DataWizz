@@ -60,6 +60,7 @@ Example:
 - `PUT /api/tables/{table_id}/quality-suite`
 - `POST /api/tables/{table_id}/quality-runs`
 - `GET /api/tables/{table_id}/quality-runs`
+- `GET /api/tables/quality-engines/status`
 - `PUT /api/tables/{table_id}/quality-schedule`
 - `GET /api/tables/quality-scheduler/status`
 - `POST /api/tables/quality-scheduler/run-due`
@@ -69,6 +70,7 @@ Quality suite example:
 ```json
 {
   "name": "Orders baseline",
+  "execution_engine": "great_expectations",
   "expectations": [
     {
       "id": "has-rows",
@@ -87,6 +89,8 @@ Quality suite example:
   ]
 }
 ```
+
+Supported quality engines are `native` and `great_expectations`. The selected engine is reused by manual runs, cron schedules, and pipeline quality gates. Run-history responses include `execution_engine`.
 
 Quality schedule example:
 

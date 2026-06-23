@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models.catalog import DeltaTable, QualityRun
 from app.services.catalog_metadata_service import CatalogMetadataService
+from app.services.great_expectations_quality_adapter import great_expectations_quality_adapter
 from app.services.openlineage_service import openlineage_service
 from app.utils.naming import slugify_identifier
 
@@ -17,7 +18,40 @@ class DataQualityService:
     def __init__(self) -> None:
         self.catalog_metadata_service = CatalogMetadataService()
 
-    def run(self, table: DeltaTable, expectations: list[dict], *, suite_name: str | None = None) -> dict:
+    def get_engine_status(self) -> dict:
+        return {
+            "default_engine": "native",
+            "engines": [
+                {
+                    "name": "native",
+                    "label": "DataWizz Native",
+                    "available": True,
+                    "version": None,
+                    "detail": "Lightweight DuckDB validation with no additional runtime services.",
+                },
+                great_expectations_quality_adapter.get_status(),
+            ],
+        }
+
+    def run(
+        self,
+        table: DeltaTable,
+        expectations: list[dict],
+        *,
+        suite_name: str | None = None,
+        execution_engine: str = "native",
+    ) -> dict:
+        if execution_engine == "great_expectations":
+            result = great_expectations_quality_adapter.run(
+                table,
+                expectations,
+                suite_name=suite_name,
+            )
+            result["run_at"] = datetime.now(timezone.utc).isoformat()
+            return result
+        if execution_engine != "native":
+            raise ValueError(f"Unsupported quality execution engine: {execution_engine}")
+
         arrow_table = DeltaLakeTable(table.storage_path).to_pyarrow_table()
         columns = set(arrow_table.column_names)
         connection = duckdb.connect(database=":memory:")
@@ -43,6 +77,7 @@ class DataQualityService:
         return {
             "table_id": table.id,
             "suite_name": suite_name or f"{table.schema_name}.{table.name} baseline",
+            "engine": "native",
             "status": status,
             "success": not blocking,
             "row_count": row_count,
@@ -64,6 +99,7 @@ class DataQualityService:
         node_id: str | None = None,
     ) -> QualityRun:
         suite = self.catalog_metadata_service.get_quality_suite(table)
+        execution_engine = suite.get("quality_execution_engine") or "native"
         started_at = datetime.now(timezone.utc)
         started = perf_counter()
         lineage_job_name = f"quality.{slugify_identifier(table.schema_name)}.{slugify_identifier(table.name)}"
@@ -78,6 +114,7 @@ class DataQualityService:
             pipeline_run_id=pipeline_run_id,
             node_id=node_id,
             suite_name=suite["quality_suite_name"],
+            execution_engine=execution_engine,
             trigger_type=trigger_type,
             status="running",
             success=False,
@@ -104,6 +141,7 @@ class DataQualityService:
                     "jobKind": "quality_check",
                     "tableId": table.id,
                     "qualitySuite": suite["quality_suite_name"],
+                    "qualityEngine": execution_engine,
                     "triggerType": trigger_type,
                     "pipelineRunId": pipeline_run_id,
                     "nodeId": node_id,
@@ -116,6 +154,7 @@ class DataQualityService:
                 table,
                 suite["quality_expectations"],
                 suite_name=suite["quality_suite_name"],
+                execution_engine=execution_engine,
             )
             run.status = result["status"]
             run.success = result["success"]
@@ -147,6 +186,7 @@ class DataQualityService:
                     "jobKind": "quality_check",
                     "tableId": table.id,
                     "qualitySuite": run.suite_name,
+                    "qualityEngine": run.execution_engine,
                     "triggerType": trigger_type,
                     "pipelineRunId": pipeline_run_id,
                     "nodeId": node_id,

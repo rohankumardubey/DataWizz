@@ -5,13 +5,12 @@ from sqlalchemy.engine import Engine
 def ensure_runtime_schema(db_engine: Engine) -> None:
     inspector = inspect(db_engine)
     table_names = inspector.get_table_names()
-    if "notebooks" not in table_names:
-        return
 
-    notebook_columns = {column["name"] for column in inspector.get_columns("notebooks")}
-    if "latest_cell_results_json" not in notebook_columns:
-        with db_engine.begin() as connection:
-            connection.execute(text("ALTER TABLE notebooks ADD COLUMN latest_cell_results_json JSON"))
+    if "notebooks" in table_names:
+        notebook_columns = {column["name"] for column in inspector.get_columns("notebooks")}
+        if "latest_cell_results_json" not in notebook_columns:
+            with db_engine.begin() as connection:
+                connection.execute(text("ALTER TABLE notebooks ADD COLUMN latest_cell_results_json JSON"))
 
     if "semantic_datasets" in table_names:
         dataset_columns = {column["name"] for column in inspector.get_columns("semantic_datasets")}
@@ -29,6 +28,17 @@ def ensure_runtime_schema(db_engine: Engine) -> None:
             if "shared_roles_json" not in dashboard_columns:
                 connection.execute(text("ALTER TABLE dashboards ADD COLUMN shared_roles_json JSON"))
             connection.execute(text("UPDATE dashboards SET visibility = 'workspace' WHERE visibility IS NULL OR TRIM(visibility) = ''"))
+
+    if "quality_runs" in table_names:
+        quality_run_columns = {column["name"] for column in inspector.get_columns("quality_runs")}
+        if "execution_engine" not in quality_run_columns:
+            with db_engine.begin() as connection:
+                connection.execute(
+                    text("ALTER TABLE quality_runs ADD COLUMN execution_engine VARCHAR(64) NOT NULL DEFAULT 'native'")
+                )
+                connection.execute(
+                    text("UPDATE quality_runs SET execution_engine = 'native' WHERE execution_engine IS NULL")
+                )
 
     if "notebook_snippets" not in table_names:
         with db_engine.begin() as connection:
