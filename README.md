@@ -65,6 +65,18 @@ The current version is intentionally built as a serious MVP rather than a toy de
   </tr>
   <tr>
     <td width="50%">
+      <img src="./docs/screenshots/quality-suite.png" alt="DataWizz data quality suite" />
+    </td>
+    <td width="50%">
+      <img src="./docs/screenshots/lineage-events.png" alt="DataWizz OpenLineage events" />
+    </td>
+  </tr>
+  <tr>
+    <td><strong>Data quality operations</strong><br/>Choose native DuckDB or Great Expectations execution, retain validation evidence, schedule checks, and apply pipeline quality gates.</td>
+    <td><strong>Operational lineage</strong><br/>Inspect OpenLineage lifecycle events with resolved inputs, Delta outputs, run facets, and external delivery status.</td>
+  </tr>
+  <tr>
+    <td width="50%">
       <img src="./docs/screenshots/pipeline-builder.png" alt="DataWizz pipeline builder" />
     </td>
     <td width="50%">
