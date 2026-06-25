@@ -12,6 +12,7 @@ import { DatasetsPage } from './pages/datasets'
 import { EngineLabPage } from './pages/engine-lab'
 import { FileExplorerPage } from './pages/files'
 import { JobLogsPage } from './pages/logs'
+import { MetricsPage } from './pages/metrics'
 import { PipelineBuilderPage } from './pages/pipelines'
 import { PipelineRunsPage } from './pages/runs'
 import { ReportSchedulerPage } from './pages/report-scheduler'
@@ -43,6 +44,7 @@ function App() {
             <Route path="/engines" element={<EngineLabPage />} />
             <Route path="/pipelines" element={<PipelineBuilderPage />} />
             <Route path="/bi/datasets" element={<DatasetsPage />} />
+            <Route path="/bi/metrics" element={<MetricsPage />} />
             <Route path="/bi/charts/new" element={<ChartBuilderPage />} />
             <Route path="/bi/dashboards/new" element={<DashboardBuilderPage />} />
             <Route path="/bi/reports" element={<ReportSchedulerPage />} />

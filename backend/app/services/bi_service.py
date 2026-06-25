@@ -1,4 +1,5 @@
 import json
+import re
 import zipfile
 from datetime import datetime, timezone
 from io import BytesIO
@@ -10,9 +11,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.auth import User
-from app.models.bi import Chart, Dashboard, DashboardWidget, ReportSchedule, ReportSnapshot, SemanticDataset
+from app.models.bi import Chart, Dashboard, DashboardWidget, ReportSchedule, ReportSnapshot, SemanticDataset, SemanticMetric
 from app.models.catalog import DeltaTable, UploadedFile
 from app.services.duckdb_service import DuckDBService
+from app.utils.naming import slugify_identifier
 
 
 class BiService:
@@ -123,6 +125,120 @@ class BiService:
             suffix += 1
 
         return candidate
+
+    def resolve_metric_name(self, db: Session, desired_name: str, *, exclude_id: str | None = None) -> str:
+        base_name = desired_name.strip() or "Untitled Metric"
+        candidate = base_name
+        suffix = 2
+
+        while True:
+            query = db.query(SemanticMetric).filter(SemanticMetric.name == candidate)
+            if exclude_id is not None:
+                query = query.filter(SemanticMetric.id != exclude_id)
+            if query.one_or_none() is None:
+                return candidate
+            candidate = f"{base_name} ({suffix})"
+            suffix += 1
+
+    def serialize_metric(self, db: Session, metric: SemanticMetric) -> dict:
+        dataset = db.query(SemanticDataset).filter(SemanticDataset.id == metric.dataset_id).one_or_none()
+        return {
+            "id": metric.id,
+            "created_at": metric.created_at,
+            "updated_at": metric.updated_at,
+            "name": metric.name,
+            "label": metric.label,
+            "description": metric.description,
+            "dataset_id": metric.dataset_id,
+            "dataset_name": dataset.name if dataset else None,
+            "source_ref": dataset.source_ref if dataset else None,
+            "expression": metric.expression,
+            "filter_sql": metric.filter_sql,
+            "dimensions_json": metric.dimensions_json or [],
+            "format": metric.format,
+            "owner_email": metric.owner_email,
+            "is_certified": metric.is_certified,
+        }
+
+    def list_metrics(self, db: Session) -> list[dict]:
+        metrics = db.query(SemanticMetric).order_by(SemanticMetric.updated_at.desc()).all()
+        return [self.serialize_metric(db, metric) for metric in metrics]
+
+    def build_metric_preview(self, db: Session, metric: SemanticMetric, *, dimensions: list[str], where_sql: str | None, limit: int) -> dict:
+        dataset = db.query(SemanticDataset).filter(SemanticDataset.id == metric.dataset_id).one_or_none()
+        if dataset is None:
+            raise ValueError("Metric dataset not found")
+        if dataset.source_type != "delta_table":
+            raise ValueError("Metric previews currently support Delta table semantic datasets")
+
+        source_table = db.query(DeltaTable).filter(DeltaTable.name == dataset.source_ref).one_or_none()
+        if source_table is None:
+            raise ValueError("Metric source Delta table not found")
+
+        expression = self.validate_metric_sql_fragment(metric.expression, "Metric expression")
+        metric_filter = self.validate_metric_sql_fragment(metric.filter_sql, "Metric filter") if metric.filter_sql else None
+        request_filter = self.validate_metric_sql_fragment(where_sql, "Preview filter") if where_sql else None
+        selected_dimensions = dimensions or (metric.dimensions_json or [])
+        safe_dimensions = self.validate_metric_dimensions(dataset, selected_dimensions)
+
+        source_view = self._quote_identifier(slugify_identifier(dataset.source_ref))
+        metric_alias = self._quote_identifier("metric_value")
+        select_parts = [self._quote_identifier(dimension) for dimension in safe_dimensions]
+        select_parts.append(f"{expression} AS {metric_alias}")
+
+        where_parts = [part for part in [metric_filter, request_filter] if part]
+        where_clause = f"WHERE {' AND '.join(f'({part})' for part in where_parts)}" if where_parts else ""
+        group_clause = f"GROUP BY {', '.join(str(index) for index in range(1, len(safe_dimensions) + 1))}" if safe_dimensions else ""
+        order_clause = f"ORDER BY {metric_alias} DESC" if safe_dimensions else ""
+
+        sql = f"""
+        SELECT {', '.join(select_parts)}
+        FROM {source_view}
+        {where_clause}
+        {group_clause}
+        {order_clause}
+        LIMIT {limit}
+        """.strip()
+
+        result = self.duckdb_service.execute_query(
+            sql,
+            uploaded_files=db.query(UploadedFile).all(),
+            delta_tables=db.query(DeltaTable).all(),
+            limit=None,
+        )
+        return {
+            "metric": self.serialize_metric(db, metric),
+            "sql": sql,
+            "columns": result["columns"],
+            "rows": result["rows"],
+            "row_count": result["row_count"],
+        }
+
+    def _quote_identifier(self, value: str) -> str:
+        return f'"{value.replace(chr(34), chr(34) * 2)}"'
+
+    def validate_metric_sql_fragment(self, value: str | None, label: str) -> str:
+        fragment = str(value or "").strip().rstrip(";")
+        if not fragment:
+            raise ValueError(f"{label} cannot be empty")
+        lowered = fragment.lower()
+        if any(token in lowered for token in [";", "--", "/*", "*/"]):
+            raise ValueError(f"{label} cannot contain SQL statement separators or comments")
+        if re.search(r"\b(alter|attach|copy|create|delete|detach|drop|insert|install|load|pragma|update)\b", lowered):
+            raise ValueError(f"{label} can only contain a read-only SQL expression")
+        return fragment
+
+    def validate_metric_dimensions(self, dataset: SemanticDataset, dimensions: list[str]) -> list[str]:
+        schema_columns = {str(column.get("name")) for column in (dataset.schema_json or []) if isinstance(column, dict) and column.get("name")}
+        valid_dimensions = []
+        for raw_dimension in dimensions:
+            dimension = str(raw_dimension).strip()
+            if not dimension:
+                continue
+            if dimension not in schema_columns:
+                raise ValueError(f"Dimension '{dimension}' is not part of dataset {dataset.name}")
+            valid_dimensions.append(dimension)
+        return list(dict.fromkeys(valid_dimensions))
 
     def list_report_snapshots(self, db: Session, schedule_id: str | None = None) -> list[ReportSnapshot]:
         query = db.query(ReportSnapshot)

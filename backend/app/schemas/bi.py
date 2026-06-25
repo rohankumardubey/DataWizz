@@ -58,6 +58,65 @@ class SemanticDatasetRead(TimestampedModel):
     model_config = {"protected_namespaces": (), "from_attributes": True, "populate_by_name": True}
 
 
+class SemanticMetricCreateRequest(BaseModel):
+    name: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    dataset_id: str
+    expression: str = Field(min_length=1)
+    description: str | None = None
+    filter_sql: str | None = None
+    dimensions_json: list[str] = Field(default_factory=list)
+    format: str = "number"
+    is_certified: bool = False
+
+
+class SemanticMetricUpdateRequest(BaseModel):
+    name: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    dataset_id: str
+    expression: str = Field(min_length=1)
+    description: str | None = None
+    filter_sql: str | None = None
+    dimensions_json: list[str] = Field(default_factory=list)
+    format: str = "number"
+    is_certified: bool = False
+
+
+class SemanticMetricRead(TimestampedModel):
+    name: str
+    label: str
+    description: str | None = None
+    dataset_id: str
+    dataset_name: str | None = None
+    source_ref: str | None = None
+    expression: str
+    filter_sql: str | None = None
+    dimensions_json: list[str] | None = None
+    format: str
+    owner_email: str | None = None
+    is_certified: bool
+
+    model_config = {"from_attributes": True}
+
+
+class SemanticMetricListResponse(BaseModel):
+    items: list[SemanticMetricRead]
+
+
+class SemanticMetricPreviewRequest(BaseModel):
+    dimensions: list[str] = Field(default_factory=list)
+    where_sql: str | None = None
+    limit: int = Field(default=100, ge=1, le=500)
+
+
+class SemanticMetricPreviewResponse(BaseModel):
+    metric: SemanticMetricRead
+    sql: str
+    columns: list[str]
+    rows: list[dict]
+    row_count: int
+
+
 class ChartCreateRequest(BaseModel):
     name: str
     chart_type: str
