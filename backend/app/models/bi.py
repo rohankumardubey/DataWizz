@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -18,6 +18,21 @@ class SemanticDataset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     schema_json: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
     metrics_json: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
     dimensions_json: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
+
+
+class SemanticMetric(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "semantic_metrics"
+
+    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dataset_id: Mapped[str] = mapped_column(ForeignKey("semantic_datasets.id", ondelete="CASCADE"), nullable=False)
+    expression: Mapped[str] = mapped_column(Text, nullable=False)
+    filter_sql: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dimensions_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    format: Mapped[str] = mapped_column(String(64), nullable=False, default="number")
+    owner_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_certified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class Chart(UUIDPrimaryKeyMixin, TimestampMixin, Base):

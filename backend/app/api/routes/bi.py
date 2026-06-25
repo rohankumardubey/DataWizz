@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_current_user, require_roles
 from app.db.session import get_db
 from app.models.auth import User
-from app.models.bi import Chart, Dashboard, ReportSchedule, SemanticDataset
+from app.models.bi import Chart, Dashboard, ReportSchedule, SemanticDataset, SemanticMetric
 from app.schemas.common import ApiMessage
 from app.schemas.bi import (
     ChartListResponse,
@@ -37,6 +37,12 @@ from app.schemas.bi import (
     SemanticDatasetCreateRequest,
     SemanticDatasetRead,
     SemanticDatasetUpdateRequest,
+    SemanticMetricCreateRequest,
+    SemanticMetricListResponse,
+    SemanticMetricPreviewRequest,
+    SemanticMetricPreviewResponse,
+    SemanticMetricRead,
+    SemanticMetricUpdateRequest,
 )
 from app.services.bi_service import BiService
 from app.services.superset_catalog_service import superset_catalog_service
@@ -109,6 +115,102 @@ def preview_candidate_dataset(candidate_id: str, db: Session = Depends(get_db)) 
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return DatasetPreviewResponse(**preview)
+
+
+@router.get("/metrics", response_model=SemanticMetricListResponse)
+def list_metrics(db: Session = Depends(get_db)) -> SemanticMetricListResponse:
+    return SemanticMetricListResponse(items=bi_service.list_metrics(db))
+
+
+@router.post("/metrics", response_model=SemanticMetricRead, dependencies=[Depends(require_roles("admin", "analyst"))])
+def create_metric(
+    payload: SemanticMetricCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SemanticMetricRead:
+    dataset = db.query(SemanticDataset).filter(SemanticDataset.id == payload.dataset_id).one_or_none()
+    if dataset is None:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    try:
+        bi_service.validate_metric_sql_fragment(payload.expression, "Metric expression")
+        if payload.filter_sql:
+            bi_service.validate_metric_sql_fragment(payload.filter_sql, "Metric filter")
+        bi_service.validate_metric_dimensions(dataset, payload.dimensions_json)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    record = SemanticMetric(
+        **{
+            **payload.model_dump(),
+            "name": bi_service.resolve_metric_name(db, payload.name),
+            "owner_email": current_user.email,
+        }
+    )
+    db.add(record)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="A metric with this name already exists. Please try again.") from exc
+    db.refresh(record)
+    return SemanticMetricRead.model_validate(bi_service.serialize_metric(db, record))
+
+
+@router.put("/metrics/{metric_id}", response_model=SemanticMetricRead, dependencies=[Depends(require_roles("admin", "analyst"))])
+def update_metric(metric_id: str, payload: SemanticMetricUpdateRequest, db: Session = Depends(get_db)) -> SemanticMetricRead:
+    record = db.query(SemanticMetric).filter(SemanticMetric.id == metric_id).one_or_none()
+    if record is None:
+        raise HTTPException(status_code=404, detail="Metric not found")
+    dataset = db.query(SemanticDataset).filter(SemanticDataset.id == payload.dataset_id).one_or_none()
+    if dataset is None:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    try:
+        bi_service.validate_metric_sql_fragment(payload.expression, "Metric expression")
+        if payload.filter_sql:
+            bi_service.validate_metric_sql_fragment(payload.filter_sql, "Metric filter")
+        bi_service.validate_metric_dimensions(dataset, payload.dimensions_json)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    data = payload.model_dump()
+    data["name"] = bi_service.resolve_metric_name(db, payload.name, exclude_id=metric_id)
+    for key, value in data.items():
+        setattr(record, key, value)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="A metric with this name already exists. Please try again.") from exc
+    db.refresh(record)
+    return SemanticMetricRead.model_validate(bi_service.serialize_metric(db, record))
+
+
+@router.post("/metrics/{metric_id}/preview", response_model=SemanticMetricPreviewResponse)
+def preview_metric(metric_id: str, payload: SemanticMetricPreviewRequest, db: Session = Depends(get_db)) -> SemanticMetricPreviewResponse:
+    record = db.query(SemanticMetric).filter(SemanticMetric.id == metric_id).one_or_none()
+    if record is None:
+        raise HTTPException(status_code=404, detail="Metric not found")
+    try:
+        preview = bi_service.build_metric_preview(
+            db,
+            record,
+            dimensions=payload.dimensions,
+            where_sql=payload.where_sql,
+            limit=payload.limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return SemanticMetricPreviewResponse.model_validate(preview)
+
+
+@router.delete("/metrics/{metric_id}", response_model=ApiMessage, dependencies=[Depends(require_roles("admin", "analyst"))])
+def delete_metric(metric_id: str, db: Session = Depends(get_db)) -> ApiMessage:
+    record = db.query(SemanticMetric).filter(SemanticMetric.id == metric_id).one_or_none()
+    if record is None:
+        raise HTTPException(status_code=404, detail="Metric not found")
+    db.delete(record)
+    db.commit()
+    return ApiMessage(message="Metric deleted successfully")
 
 
 @router.get("/charts", response_model=ChartListResponse)

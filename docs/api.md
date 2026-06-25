@@ -143,6 +143,11 @@ Pipeline payload shape:
 
 - `GET /api/bi/datasets`
 - `POST /api/bi/datasets`
+- `GET /api/bi/metrics`
+- `POST /api/bi/metrics`
+- `PUT /api/bi/metrics/{metric_id}`
+- `POST /api/bi/metrics/{metric_id}/preview`
+- `DELETE /api/bi/metrics/{metric_id}`
 - `GET /api/bi/charts`
 - `POST /api/bi/charts`
 - `POST /api/bi/charts/preview`

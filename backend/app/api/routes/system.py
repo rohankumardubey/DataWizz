@@ -10,7 +10,7 @@ from app.api.dependencies import get_bearer_token, get_current_user, require_rol
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.auth import User
-from app.models.bi import Chart, Dashboard
+from app.models.bi import Chart, Dashboard, SemanticMetric
 from app.models.catalog import DeltaTable, UploadedFile
 from app.models.pipeline import JobLog, PipelineRun
 from app.models.pipeline import Pipeline
@@ -246,6 +246,27 @@ def global_search(
                 updated_at=item.updated_at.isoformat(),
             )
             for item in charts
+        ]
+    )
+
+    metrics = (
+        db.query(SemanticMetric)
+        .filter(or_(SemanticMetric.name.ilike(like), SemanticMetric.label.ilike(like), SemanticMetric.description.ilike(like)))
+        .order_by(desc(SemanticMetric.updated_at))
+        .limit(limit)
+        .all()
+    )
+    items.extend(
+        [
+            GlobalSearchResult(
+                id=item.id,
+                kind="metric",
+                title=item.label,
+                subtitle=item.description or item.expression,
+                route=f"/bi/metrics?metricId={item.id}",
+                updated_at=item.updated_at.isoformat(),
+            )
+            for item in metrics
         ]
     )
 

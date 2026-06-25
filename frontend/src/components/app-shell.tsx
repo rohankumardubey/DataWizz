@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Cpu, Database, GitBranch, LayoutDashboard, LineChart, LogOut, Logs, MoonStar, PlaySquare, Search, Settings2, Sparkles, SunMedium, TableProperties, Workflow } from 'lucide-react'
+import { Bell, Cpu, Database, GitBranch, LayoutDashboard, LineChart, LogOut, Logs, MoonStar, PlaySquare, Search, Settings2, Sigma, Sparkles, SunMedium, TableProperties, Workflow } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/auth-context'
@@ -29,6 +29,7 @@ const navGroups = [
     items: [
       { label: 'BI Home', to: '/bi', icon: LayoutDashboard, end: true },
       { label: 'Datasets', to: '/bi/datasets', icon: Database, end: true, roles: ['admin', 'analyst'] },
+      { label: 'Metrics Layer', to: '/bi/metrics', icon: Sigma, end: true, roles: ['admin', 'analyst'] },
       { label: 'Chart Builder', to: '/bi/charts/new', icon: LineChart, end: true, roles: ['admin', 'analyst'] },
       { label: 'Saved Charts', to: '/bi/charts', icon: LineChart, end: true },
       { label: 'Dashboard Builder', to: '/bi/dashboards/new', icon: LayoutDashboard, end: true, roles: ['admin', 'analyst'] },
@@ -45,6 +46,7 @@ function kindTone(kind: string) {
   if (kind === 'pipeline') return 'bg-orange-50 text-orange-700'
   if (kind === 'dashboard') return 'bg-emerald-50 text-emerald-700'
   if (kind === 'chart') return 'bg-violet-50 text-violet-700'
+  if (kind === 'metric') return 'bg-lime-50 text-emerald-700'
   return 'bg-slate-100 text-slate-700'
 }
 

@@ -485,6 +485,32 @@ export type DatasetPreview = {
   schema_json?: { name: string; type: string }[]
 }
 
+export type SemanticMetric = {
+  id: string
+  name: string
+  label: string
+  description?: string | null
+  dataset_id: string
+  dataset_name?: string | null
+  source_ref?: string | null
+  expression: string
+  filter_sql?: string | null
+  dimensions_json?: string[] | null
+  format: string
+  owner_email?: string | null
+  is_certified: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type SemanticMetricPreview = {
+  metric: SemanticMetric
+  sql: string
+  columns: string[]
+  rows: Record<string, unknown>[]
+  row_count: number
+}
+
 export type Chart = {
   id: string
   name: string

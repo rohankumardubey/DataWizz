@@ -45,6 +45,8 @@ import type {
   ReportScheduleExecution,
   ReportSnapshot,
   SemanticDataset,
+  SemanticMetric,
+  SemanticMetricPreview,
   SupersetIntegrationStatus,
   TableLineage,
   UploadedFile,
@@ -278,6 +280,17 @@ export const api = {
   previewDataset: (datasetId: string) => request<DatasetPreview>(`/bi/datasets/${encodeURIComponent(datasetId)}/preview`),
   previewDatasetCandidate: (candidateId: string) =>
     request<DatasetPreview>(`/bi/datasets/candidates/${encodeURIComponent(candidateId)}/preview`),
+  listMetrics: () => request<ListResponse<SemanticMetric>>('/bi/metrics'),
+  createMetric: (payload: JsonBody) =>
+    request<SemanticMetric>('/bi/metrics', { method: 'POST', body: json(payload) }),
+  updateMetric: (metricId: string, payload: JsonBody) =>
+    request<SemanticMetric>(`/bi/metrics/${encodeURIComponent(metricId)}`, { method: 'PUT', body: json(payload) }),
+  previewMetric: (metricId: string, payload: { dimensions?: string[]; where_sql?: string | null; limit?: number }) =>
+    request<SemanticMetricPreview>(`/bi/metrics/${encodeURIComponent(metricId)}/preview`, {
+      method: 'POST',
+      body: json(payload),
+    }),
+  deleteMetric: (metricId: string) => request<ApiMessage>(`/bi/metrics/${encodeURIComponent(metricId)}`, { method: 'DELETE' }),
   listCharts: () => request<ListResponse<Chart>>('/bi/charts'),
   createChart: (payload: JsonBody) => request<Chart>('/bi/charts', { method: 'POST', body: json(payload) }),
   updateChart: (chartId: string, payload: JsonBody) =>

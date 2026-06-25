@@ -23,7 +23,7 @@ The current version is intentionally built as a serious MVP rather than a toy de
 - Publish transformed outputs as Delta tables
 - Build and validate visual pipelines
 - Track runs, retries, and logs
-- Create semantic datasets, charts, dashboards, and scheduled reports
+- Create semantic datasets, governed metrics, charts, dashboards, and scheduled reports
 - Embed Superset and auto-provision a shared DataWizz analytics connection
 - Switch between dark and light workspace themes
 - Run locally with one script or as a Docker demo stack
@@ -133,6 +133,7 @@ It is especially useful when you want to demonstrate:
 ### BI Layer
 
 - Semantic dataset explorer
+- Governed semantic metrics layer with certified aggregate definitions and DuckDB previews
 - Dataset-driven chart builder
 - Saved chart library with traceability into dashboards and report schedules
 - Dashboard builder and dashboard viewer
@@ -366,7 +367,7 @@ The repository-integrity check specifically verifies that critical frontend libr
 - Visual pipeline builder validation, join and aggregation guardrails, retries, logs filtering, and recurring scheduler execution
 - OpenLineage-compatible pipeline and notebook lifecycle events with local retention, dataset inputs/outputs, and optional HTTP delivery
 - Engine Lab notebooks with DuckDB, PySpark, and DataFusion runtimes, saved snippets, collaboration basics, and persisted cell outputs
-- BI dataset explorer, chart builder, saved charts, dashboard builder and viewer, filters, and report scheduler with stored artifacts
+- BI dataset explorer, semantic metrics layer, chart builder, saved charts, dashboard builder and viewer, filters, and report scheduler with stored artifacts
 - Embedded Superset runtime with a shared serving catalog and auto-provisioned `DataWizz Serving Catalog` connection
 - Clean-clone CI gates for repository integrity, frontend build, backend smoke tests, and Compose validation
 
@@ -380,7 +381,6 @@ The repository-integrity check specifically verifies that critical frontend libr
 - Natural-language chart generation
 - Dashboard sharing and permissions
 - Row-level security and column masking
-- Semantic metrics layer
 - Alerts, subscriptions, and richer export delivery
 - Deployment automation, monitoring, and Kubernetes packaging
 

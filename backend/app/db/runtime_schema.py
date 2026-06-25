@@ -29,6 +29,31 @@ def ensure_runtime_schema(db_engine: Engine) -> None:
                 connection.execute(text("ALTER TABLE dashboards ADD COLUMN shared_roles_json JSON"))
             connection.execute(text("UPDATE dashboards SET visibility = 'workspace' WHERE visibility IS NULL OR TRIM(visibility) = ''"))
 
+    if "semantic_metrics" not in table_names:
+        with db_engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE semantic_metrics (
+                        id VARCHAR PRIMARY KEY,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                        name VARCHAR(255) NOT NULL UNIQUE,
+                        label VARCHAR(255) NOT NULL,
+                        description TEXT,
+                        dataset_id VARCHAR NOT NULL,
+                        expression TEXT NOT NULL,
+                        filter_sql TEXT,
+                        dimensions_json JSON,
+                        format VARCHAR(64) NOT NULL DEFAULT 'number',
+                        owner_email VARCHAR(255),
+                        is_certified BOOLEAN NOT NULL DEFAULT 0,
+                        FOREIGN KEY(dataset_id) REFERENCES semantic_datasets(id) ON DELETE CASCADE
+                    )
+                    """
+                )
+            )
+
     if "quality_runs" in table_names:
         quality_run_columns = {column["name"] for column in inspector.get_columns("quality_runs")}
         if "execution_engine" not in quality_run_columns:

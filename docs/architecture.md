@@ -9,7 +9,7 @@ The MVP delivers an internal, demo-ready lakehouse platform that combines:
 - Delta Lake writes powered by `delta-rs`
 - Visual pipeline authoring and manual execution
 - Operational metadata persisted in PostgreSQL
-- A lightweight BI layer for charts and dashboards
+- A lightweight BI layer for semantic datasets, governed metrics, charts, and dashboards
 
 ## Architectural Principles
 
@@ -59,7 +59,7 @@ storage/
 - `tables`: list and preview Delta tables
 - `pipelines`: save/load pipelines, validate graph, execute manually
 - `runs`: pipeline runs and logs
-- `bi`: datasets, charts, dashboards, report schedules
+- `bi`: datasets, semantic metrics, charts, dashboards, report schedules
 - `system`: dashboard metrics, health, configuration snapshot
 
 ### Service Layer
@@ -69,7 +69,7 @@ storage/
 - `DeltaService`: write/read/list Delta Lake tables
 - `PipelineService`: DAG validation, topological execution, logging
 - `MetadataService`: shared CRUD helpers for persisted entities
-- `BiService`: chart query previews, dashboard persistence
+- `BiService`: semantic metric compilation, chart query previews, dashboard persistence
 - `AirflowDagService`: Python DAG code generation from pipeline JSON
 
 ### Persistence Layer
@@ -85,6 +85,7 @@ Metadata lives in PostgreSQL and includes:
 - pipeline_runs
 - job_logs
 - semantic_datasets
+- semantic_metrics
 - charts
 - dashboards
 - dashboard_widgets
@@ -121,9 +122,10 @@ Metadata lives in PostgreSQL and includes:
 The in-app BI module is intentionally lightweight in the MVP:
 
 - datasets map to Delta tables or saved SQL
+- semantic metrics store reusable aggregate expressions, optional filters, default dimensions, owner metadata, and certification status
 - charts persist configuration and rendering metadata
 - dashboards store widget layout and chart references
-- chart preview queries execute through DuckDB
+- metric and chart preview queries execute through DuckDB
 
 Optional Superset integration is documented, but not required for the in-app MVP flow.
 
@@ -191,7 +193,7 @@ Included in this first version:
 - Visual pipeline builder with manual execution
 - Pipeline runs and logs
 - OpenLineage-compatible pipeline and notebook lifecycle events
-- Basic BI module with datasets, charts, and dashboards
+- Basic BI module with semantic datasets, governed metrics, charts, and dashboards
 - Docker Compose setup for frontend, backend, PostgreSQL, and MinIO
 
 Deferred but documented as TODOs:
