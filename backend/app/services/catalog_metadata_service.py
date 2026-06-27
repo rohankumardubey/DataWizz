@@ -84,6 +84,14 @@ class CatalogMetadataService:
             "quality_schedule_updated_at": None,
         }
 
+    def _default_access_policy(self) -> dict:
+        return {
+            "access_policy_mode": "off",
+            "access_policy_updated_at": None,
+            "row_filters": [],
+            "column_masks": [],
+        }
+
     def get_contract(self, table: DeltaTable) -> dict:
         registry = self._load_registry()
         stored = registry.get(table.id, {})
@@ -137,7 +145,37 @@ class CatalogMetadataService:
         }
         payload.update(self.get_contract(table))
         payload.update(self.get_quality_suite(table))
+        payload.update(self.get_access_policy(table))
         return payload
+
+    def get_access_policy(self, table: DeltaTable) -> dict:
+        registry = self._load_registry()
+        stored = registry.get(table.id, {})
+        defaults = self._default_access_policy()
+        return {
+            "access_policy_mode": stored.get("access_policy_mode", defaults["access_policy_mode"]),
+            "access_policy_updated_at": stored.get("access_policy_updated_at", defaults["access_policy_updated_at"]),
+            "row_filters": stored.get("row_filters", defaults["row_filters"]),
+            "column_masks": stored.get("column_masks", defaults["column_masks"]),
+        }
+
+    def update_access_policy(
+        self,
+        table: DeltaTable,
+        *,
+        policy_mode: str,
+        row_filters: list[dict],
+        column_masks: list[dict],
+    ) -> dict:
+        registry = self._load_registry()
+        current = registry.get(table.id, {})
+        current["access_policy_mode"] = policy_mode
+        current["row_filters"] = row_filters
+        current["column_masks"] = column_masks
+        current["access_policy_updated_at"] = datetime.now(timezone.utc).isoformat()
+        registry[table.id] = current
+        self._save_registry(registry)
+        return self.enrich_table(table)
 
     def get_quality_suite(self, table: DeltaTable) -> dict:
         registry = self._load_registry()

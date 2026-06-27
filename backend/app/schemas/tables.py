@@ -47,6 +47,10 @@ class DeltaTableRead(TimestampedModel):
     quality_schedule_cron: str | None = None
     quality_schedule_enabled: bool | None = None
     quality_schedule_updated_at: datetime | None = None
+    access_policy_mode: str | None = None
+    access_policy_updated_at: datetime | None = None
+    row_filters: list[dict] | None = None
+    column_masks: list[dict] | None = None
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 
@@ -74,6 +78,28 @@ class DeltaTableContractUpdateRequest(BaseModel):
     contract_allow_column_removal: bool = False
     contract_allow_type_changes: bool = False
     adopt_current_schema: bool = False
+
+
+class AccessPolicyRowFilter(BaseModel):
+    id: str | None = None
+    role: str = Field(default="viewer", pattern="^(all|admin|analyst|viewer)$")
+    expression: str = Field(min_length=1)
+    enabled: bool = True
+
+
+class AccessPolicyColumnMask(BaseModel):
+    id: str | None = None
+    role: str = Field(default="viewer", pattern="^(all|admin|analyst|viewer)$")
+    column: str = Field(min_length=1)
+    mask_type: str = Field(default="null", pattern="^(null|fixed|hash|partial)$")
+    replacement: str | None = "***MASKED***"
+    enabled: bool = True
+
+
+class DeltaTableAccessPolicyUpdateRequest(BaseModel):
+    access_policy_mode: str = Field(default="off", pattern="^(off|warn|enforce)$")
+    row_filters: list[AccessPolicyRowFilter] = Field(default_factory=list, max_length=50)
+    column_masks: list[AccessPolicyColumnMask] = Field(default_factory=list, max_length=100)
 
 
 class QualityExpectation(BaseModel):

@@ -110,6 +110,7 @@ It is especially useful when you want to demonstrate:
 - SQL querying over CSV, JSON, Parquet, and curated Delta tables
 - Write query outputs to Delta Lake with append or overwrite modes
 - Catalog browsing with metadata, freshness, ownership, tags, and lineage hints
+- Role-aware row filters and column masking for governed curated-table access
 - Reusable data-quality suites with selectable native DuckDB or Great Expectations execution
 - Theme-aware workspace shell with dark and light presentation modes
 
@@ -362,7 +363,7 @@ The repository-integrity check specifically verifies that critical frontend libr
 - Dark and light workspace themes with a polished shared shell, search, and page-level UX cleanup
 - File Explorer drag-and-drop uploads, schema and row preview, deep column profiling, and profile-driven recommendations
 - SQL Workspace querying, export, and Delta publishing backed by DuckDB
-- Catalog governance editing, quality and freshness signals, data contract guardrails, lineage relationships, and mini lineage graph drill-down
+- Catalog governance editing, row filters, column masking, quality and freshness signals, data contract guardrails, lineage relationships, and mini lineage graph drill-down
 - Curated-table quality suites with native DuckDB or Great Expectations execution, persisted run history, cron schedules, and pipeline quality gates
 - Visual pipeline builder validation, join and aggregation guardrails, retries, logs filtering, and recurring scheduler execution
 - OpenLineage-compatible pipeline and notebook lifecycle events with local retention, dataset inputs/outputs, and optional HTTP delivery
@@ -380,7 +381,6 @@ The repository-integrity check specifically verifies that critical frontend libr
 - Notebook export artifacts and richer collaboration flows
 - Natural-language chart generation
 - Dashboard sharing and permissions
-- Row-level security and column masking
 - Alerts, subscriptions, and richer export delivery
 - Deployment automation, monitoring, and Kubernetes packaging
 
