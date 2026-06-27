@@ -149,6 +149,22 @@ export type QualitySchedulerStatus = {
   last_summary: QualitySchedulerSweep
 }
 
+export type AccessPolicyRowFilter = {
+  id?: string | null
+  role: 'all' | 'admin' | 'analyst' | 'viewer'
+  expression: string
+  enabled: boolean
+}
+
+export type AccessPolicyColumnMask = {
+  id?: string | null
+  role: 'all' | 'admin' | 'analyst' | 'viewer'
+  column: string
+  mask_type: 'null' | 'fixed' | 'hash' | 'partial'
+  replacement?: string | null
+  enabled: boolean
+}
+
 export type DeltaTable = {
   id: string
   name: string
@@ -199,6 +215,10 @@ export type DeltaTable = {
   quality_schedule_cron?: string | null
   quality_schedule_enabled?: boolean
   quality_schedule_updated_at?: string | null
+  access_policy_mode?: 'off' | 'warn' | 'enforce'
+  access_policy_updated_at?: string | null
+  row_filters?: AccessPolicyRowFilter[]
+  column_masks?: AccessPolicyColumnMask[]
   created_at: string
   updated_at: string
 }

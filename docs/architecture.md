@@ -7,6 +7,7 @@ The MVP delivers an internal, demo-ready lakehouse platform that combines:
 - File ingestion into a raw zone
 - SQL querying over files and curated Delta tables with DuckDB
 - Delta Lake writes powered by `delta-rs`
+- Role-aware row filtering and column masking for governed curated tables
 - Visual pipeline authoring and manual execution
 - Operational metadata persisted in PostgreSQL
 - A lightweight BI layer for semantic datasets, governed metrics, charts, and dashboards
@@ -107,6 +108,16 @@ Metadata lives in PostgreSQL and includes:
 3. Table metadata and schema are stored in PostgreSQL
 4. The table becomes queryable in the catalog and SQL workspace
 
+### Governed Access
+
+Curated Delta tables can store local access policies in the catalog metadata registry:
+
+- `off`: rules are disabled
+- `warn`: rules are documented but not applied to runtime views
+- `enforce`: matching row filters and column masks are applied when DuckDB registers curated table views
+
+Policies support role-specific or `all` role row predicates plus `null`, `fixed`, `hash`, and `partial` column masks. Catalog previews and SQL Workspace queries use the same governed view registration path, so manual SQL reads see filtered and masked data for the active user role.
+
 ### Pipeline Execution
 
 1. User defines a pipeline graph in the visual builder
@@ -189,6 +200,7 @@ Included in this first version:
 - SQL execution with DuckDB
 - Write query results to Delta Lake
 - Delta catalog browsing
+- Role-aware row filters and column masking over curated table previews and SQL queries
 - Curated-table quality suites, persisted validation history, cron schedules, and pipeline quality gates
 - Visual pipeline builder with manual execution
 - Pipeline runs and logs

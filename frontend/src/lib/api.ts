@@ -167,6 +167,8 @@ export const api = {
     request<DeltaTable>(`/tables/${encodeURIComponent(tableId)}/metadata`, { method: 'PUT', body: json(payload) }),
   updateTableContract: (tableId: string, payload: JsonBody) =>
     request<DeltaTable>(`/tables/${encodeURIComponent(tableId)}/contract`, { method: 'PUT', body: json(payload) }),
+  updateTableAccessPolicy: (tableId: string, payload: JsonBody) =>
+    request<DeltaTable>(`/tables/${encodeURIComponent(tableId)}/access-policy`, { method: 'PUT', body: json(payload) }),
   updateTableQualitySuite: (
     tableId: string,
     payload: { name: string; execution_engine: 'native' | 'great_expectations'; expectations: QualityExpectation[] },

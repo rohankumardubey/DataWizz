@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import require_roles
 from app.db.session import get_db
+from app.models.auth import User
 from app.models.catalog import DeltaTable, QueryHistory, UploadedFile
 from app.schemas.queries import (
     QueryExecuteRequest,
@@ -27,12 +28,17 @@ duckdb_service = DuckDBService()
 delta_service = DeltaService()
 
 
-def _run_query_for_payload(db: Session, sql: str, limit: int | None = None) -> dict:
+def _access_context(current_user: User) -> dict:
+    return {"role": current_user.role, "email": current_user.email}
+
+
+def _run_query_for_payload(db: Session, sql: str, current_user: User, limit: int | None = None) -> dict:
     return duckdb_service.execute_query(
         sql,
         uploaded_files=db.query(UploadedFile).all(),
         delta_tables=db.query(DeltaTable).all(),
         limit=limit,
+        access_context=_access_context(current_user),
     )
 
 
@@ -42,10 +48,14 @@ def list_query_history(db: Session = Depends(get_db)) -> QueryHistoryListRespons
     return QueryHistoryListResponse(items=items)
 
 
-@router.post("/execute", response_model=QueryExecuteResponse, dependencies=[Depends(require_roles("admin", "analyst"))])
-def execute_query(payload: QueryExecuteRequest, db: Session = Depends(get_db)) -> QueryExecuteResponse:
+@router.post("/execute", response_model=QueryExecuteResponse)
+def execute_query(
+    payload: QueryExecuteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "analyst")),
+) -> QueryExecuteResponse:
     try:
-        result = _run_query_for_payload(db, payload.sql, payload.limit)
+        result = _run_query_for_payload(db, payload.sql, current_user, payload.limit)
         query = QueryHistory(
             name=payload.name,
             sql_text=payload.sql,
@@ -70,10 +80,14 @@ def execute_query(payload: QueryExecuteRequest, db: Session = Depends(get_db)) -
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/export", dependencies=[Depends(require_roles("admin", "analyst"))])
-def export_query(payload: QueryExportRequest, db: Session = Depends(get_db)) -> StreamingResponse:
+@router.post("/export")
+def export_query(
+    payload: QueryExportRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "analyst")),
+) -> StreamingResponse:
     try:
-        result = _run_query_for_payload(db, payload.sql, None)
+        result = _run_query_for_payload(db, payload.sql, current_user, None)
         arrow_table = result["arrow_table"]
         safe_name = slugify_identifier(payload.file_name or "query_result")
 
@@ -99,9 +113,13 @@ def export_query(payload: QueryExportRequest, db: Session = Depends(get_db)) -> 
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/write-delta", response_model=WriteDeltaResponse, dependencies=[Depends(require_roles("admin", "analyst"))])
-def write_delta(payload: WriteDeltaRequest, db: Session = Depends(get_db)) -> WriteDeltaResponse:
-    result = _run_query_for_payload(db, payload.sql, None)
+@router.post("/write-delta", response_model=WriteDeltaResponse)
+def write_delta(
+    payload: WriteDeltaRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "analyst")),
+) -> WriteDeltaResponse:
+    result = _run_query_for_payload(db, payload.sql, current_user, None)
     table = delta_service.write_table(
         db,
         table_name=payload.table_name,

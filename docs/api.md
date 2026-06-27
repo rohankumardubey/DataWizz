@@ -57,6 +57,7 @@ Example:
 
 - `GET /api/tables`
 - `GET /api/tables/{table_id}/preview`
+- `PUT /api/tables/{table_id}/access-policy`
 - `PUT /api/tables/{table_id}/quality-suite`
 - `POST /api/tables/{table_id}/quality-runs`
 - `GET /api/tables/{table_id}/quality-runs`

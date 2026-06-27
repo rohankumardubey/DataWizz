@@ -82,6 +82,15 @@ function commaSeparatedValues(value: string) {
   return Array.from(new Set(value.split(',').map((item) => item.trim()).filter(Boolean)))
 }
 
+function parseJsonArray(value: string) {
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
 export function CatalogPage() {
   const { hasAnyRole } = useAuth()
   const canEdit = hasAnyRole('admin', 'analyst')
@@ -100,6 +109,9 @@ export function CatalogPage() {
   const [contractAllowAdditiveDraft, setContractAllowAdditiveDraft] = useState(true)
   const [contractAllowRemovalDraft, setContractAllowRemovalDraft] = useState(false)
   const [contractAllowTypeDraft, setContractAllowTypeDraft] = useState(false)
+  const [accessPolicyModeDraft, setAccessPolicyModeDraft] = useState<'off' | 'warn' | 'enforce'>('off')
+  const [rowFiltersDraft, setRowFiltersDraft] = useState('[]')
+  const [columnMasksDraft, setColumnMasksDraft] = useState('[]')
   const [qualitySuiteNameDraft, setQualitySuiteNameDraft] = useState('')
   const [qualityMinRowsDraft, setQualityMinRowsDraft] = useState('1')
   const [qualityNotNullDraft, setQualityNotNullDraft] = useState('')
@@ -177,6 +189,25 @@ export function CatalogPage() {
       queryClient.invalidateQueries({ queryKey: ['tables', table.id, 'preview'] })
       queryClient.invalidateQueries({ queryKey: ['tables', table.id, 'lineage'] })
       setStatusMessage(`Updated contract guardrails for ${table.schema_name}.${table.name}.`)
+    },
+    onError: (error: Error) => setStatusMessage(error.message),
+  })
+  const updateAccessPolicyMutation = useMutation({
+    mutationFn: async (payload: {
+      tableId: string
+      access_policy_mode: 'off' | 'warn' | 'enforce'
+      row_filters: unknown[]
+      column_masks: unknown[]
+    }) =>
+      api.updateTableAccessPolicy(payload.tableId, {
+        access_policy_mode: payload.access_policy_mode,
+        row_filters: payload.row_filters,
+        column_masks: payload.column_masks,
+      }),
+    onSuccess: (table) => {
+      queryClient.invalidateQueries({ queryKey: ['tables'] })
+      queryClient.invalidateQueries({ queryKey: ['tables', table.id, 'preview'] })
+      setStatusMessage(`Updated access policy for ${table.schema_name}.${table.name}.`)
     },
     onError: (error: Error) => setStatusMessage(error.message),
   })
@@ -327,6 +358,7 @@ export function CatalogPage() {
   const selectedTable = tables.find((table) => table.id === selectedTableId) ?? null
   const selectedLineage = lineageQuery.data
   const governedTables = tables.filter((table) => (table.governance_score ?? 0) >= 75).length
+  const securedTables = tables.filter((table) => table.access_policy_mode === 'enforce').length
   const averageGovernanceScore = tables.length
     ? Math.round(tables.reduce((sum, table) => sum + (table.governance_score ?? 0), 0) / tables.length)
     : 0
@@ -346,6 +378,9 @@ export function CatalogPage() {
     setContractAllowAdditiveDraft(selectedTable.contract_allow_additive_columns ?? true)
     setContractAllowRemovalDraft(selectedTable.contract_allow_column_removal ?? false)
     setContractAllowTypeDraft(selectedTable.contract_allow_type_changes ?? false)
+    setAccessPolicyModeDraft(selectedTable.access_policy_mode ?? 'off')
+    setRowFiltersDraft(JSON.stringify(selectedTable.row_filters ?? [], null, 2))
+    setColumnMasksDraft(JSON.stringify(selectedTable.column_masks ?? [], null, 2))
     setQualitySuiteNameDraft(selectedTable.quality_suite_name ?? `${selectedTable.schema_name}.${selectedTable.name} baseline`)
     setQualityMinRowsDraft(
       String(
@@ -451,9 +486,10 @@ export function CatalogPage() {
         description="Browse curated Delta Lake assets by schema, inspect table metadata and schema definitions, and jump straight into SQL exploration from the governed catalog."
       />
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <StatCard label="Delta Tables" value={String(tables.length)} accent="bg-[#ffe2de]" subtext="Curated assets published into the lakehouse." />
         <StatCard label="Governed Assets" value={String(governedTables)} accent="bg-[#d8f1ff]" subtext="Assets scoring 75 or above on governance readiness." />
+        <StatCard label="Secured Assets" value={String(securedTables)} accent="bg-[#ede9fe]" subtext="Tables with enforced row filters or column masking." />
         <StatCard label="Average Score" value={`${averageGovernanceScore}/100`} accent="bg-[#e6f7eb]" subtext="Average metadata, freshness, and lineage coverage across the catalog." />
         <StatCard label="Latest Refresh" value={latestRefresh ? formatDate(latestRefresh) : 'N/A'} accent="bg-[#fff4d6]" subtext="Most recently updated curated asset in the catalog." />
       </div>
@@ -548,9 +584,14 @@ export function CatalogPage() {
                           <span className={`rounded-full px-3 py-1 text-xs font-medium ${freshnessTone(table.freshness_status)}`}>
                             {table.freshness_status || 'unknown'}
                           </span>
-                          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${governanceTone(table.governance_status)}`}>
-                            Governance {table.governance_score ?? 0}/100
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${governanceTone(table.governance_status)}`}>
+                          Governance {table.governance_score ?? 0}/100
+                        </span>
+                        {table.access_policy_mode === 'enforce' ? (
+                          <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
+                            Access enforced
                           </span>
+                        ) : null}
                           {table.owner ? (
                             <span
                               className={`rounded-full px-3 py-1 text-xs font-medium ${
@@ -613,6 +654,9 @@ export function CatalogPage() {
                         </span>
                         <span className={`rounded-full px-3 py-1 text-xs font-semibold ${governanceTone(selectedTable.governance_status)}`}>
                           Governance {selectedTable.governance_score ?? 0}/100 · Grade {selectedTable.governance_grade ?? 'N/A'}
+                        </span>
+                        <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
+                          Access {selectedTable.access_policy_mode ?? 'off'}
                         </span>
                         {selectedTable.tags?.map((tag) => (
                           <span key={tag} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
@@ -814,6 +858,116 @@ export function CatalogPage() {
                     </div>
                   </Panel>
                 ) : null}
+
+                <Panel className="space-y-5">
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate/55">Access Control</p>
+                      <h3 className="mt-2 font-display text-2xl text-ink">Row Filters and Column Masking</h3>
+                      <p className="mt-3 max-w-3xl text-sm leading-6 text-slate/70">
+                        Define role-aware SQL row predicates and column masks. When policy mode is enforce, DataWizz registers governed DuckDB views for catalog previews and SQL Workspace queries.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-violet-700">
+                        {selectedTable.access_policy_mode ?? 'off'} mode
+                      </span>
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
+                        {(selectedTable.row_filters ?? []).filter((rule) => rule.enabled).length} filters
+                      </span>
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
+                        {(selectedTable.column_masks ?? []).filter((rule) => rule.enabled).length} masks
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className={cn('rounded-2xl p-4', theme === 'dark' ? 'bg-white/[0.03]' : 'bg-slate-50')}>
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate/50">Policy Mode</p>
+                      <p className="mt-2 font-display text-2xl text-ink">{selectedTable.access_policy_mode ?? 'off'}</p>
+                      <p className="mt-2 text-sm text-slate/70">Off and warn preserve existing query behavior; enforce applies matching rules.</p>
+                    </div>
+                    <div className={cn('rounded-2xl p-4', theme === 'dark' ? 'bg-white/[0.03]' : 'bg-slate-50')}>
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate/50">Row Filters</p>
+                      <p className="mt-2 font-display text-2xl text-ink">{selectedTable.row_filters?.length ?? 0}</p>
+                      <p className="mt-2 text-sm text-slate/70">Predicates are combined with AND for the active role.</p>
+                    </div>
+                    <div className={cn('rounded-2xl p-4', theme === 'dark' ? 'bg-white/[0.03]' : 'bg-slate-50')}>
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate/50">Column Masks</p>
+                      <p className="mt-2 font-display text-2xl text-ink">{selectedTable.column_masks?.length ?? 0}</p>
+                      <p className="mt-2 text-sm text-slate/70">Supported masks: null, fixed, hash, and partial reveal.</p>
+                    </div>
+                  </div>
+
+                  <fieldset className="grid gap-4" disabled={!canEdit || updateAccessPolicyMutation.isPending}>
+                    <div>
+                      <Label>Policy Mode</Label>
+                      <Select value={accessPolicyModeDraft} onChange={(event) => setAccessPolicyModeDraft(event.target.value as 'off' | 'warn' | 'enforce')}>
+                        <option value="off">Off</option>
+                        <option value="warn">Warn / document only</option>
+                        <option value="enforce">Enforce in previews and SQL queries</option>
+                      </Select>
+                    </div>
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      <div>
+                        <Label>Row Filters JSON</Label>
+                        <Textarea
+                          rows={9}
+                          value={rowFiltersDraft}
+                          onChange={(event) => setRowFiltersDraft(event.target.value)}
+                          className="font-mono"
+                          placeholder={`[{"role":"viewer","expression":"region = 'EMEA'","enabled":true}]`}
+                        />
+                        <p className="mt-2 text-sm text-slate/70">Use roles <code>all</code>, <code>admin</code>, <code>analyst</code>, or <code>viewer</code>. Expressions must be read-only SQL predicates.</p>
+                      </div>
+                      <div>
+                        <Label>Column Masks JSON</Label>
+                        <Textarea
+                          rows={9}
+                          value={columnMasksDraft}
+                          onChange={(event) => setColumnMasksDraft(event.target.value)}
+                          className="font-mono"
+                          placeholder={`[{"role":"viewer","column":"email","mask_type":"partial","replacement":"***MASKED***","enabled":true}]`}
+                        />
+                        <p className="mt-2 text-sm text-slate/70">Mask only columns present in this table schema. Hash and partial masks cast values to strings.</p>
+                      </div>
+                    </div>
+                    {canEdit ? (
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          disabled={updateAccessPolicyMutation.isPending}
+                          onClick={() => {
+                            const rowFilters = parseJsonArray(rowFiltersDraft)
+                            const columnMasks = parseJsonArray(columnMasksDraft)
+                            if (!rowFilters || !columnMasks) {
+                              setStatusMessage('Access policy rules must be valid JSON arrays before they can be saved.')
+                              return
+                            }
+                            updateAccessPolicyMutation.mutate({
+                              tableId: selectedTable.id,
+                              access_policy_mode: accessPolicyModeDraft,
+                              row_filters: rowFilters,
+                              column_masks: columnMasks,
+                            })
+                          }}
+                        >
+                          {updateAccessPolicyMutation.isPending ? 'Saving...' : 'Save Access Policy'}
+                        </Button>
+                        <Button
+                          tone="ghost"
+                          disabled={updateAccessPolicyMutation.isPending}
+                          onClick={() => {
+                            setAccessPolicyModeDraft('off')
+                            setRowFiltersDraft('[]')
+                            setColumnMasksDraft('[]')
+                          }}
+                        >
+                          Clear Draft
+                        </Button>
+                      </div>
+                    ) : null}
+                  </fieldset>
+                </Panel>
 
                 <Panel className="space-y-5">
                   <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">

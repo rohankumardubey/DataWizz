@@ -2,11 +2,13 @@ from croniter import croniter
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import require_roles
+from app.api.dependencies import get_current_user, require_roles
 from app.db.session import get_db
+from app.models.auth import User
 from app.models.catalog import DeltaTable, QualityRun
 from app.schemas.table_lineage import TableLineageResponse
 from app.schemas.tables import (
+    DeltaTableAccessPolicyUpdateRequest,
     DeltaTableContractUpdateRequest,
     DeltaTableListResponse,
     DeltaTableMetadataUpdateRequest,
@@ -20,6 +22,7 @@ from app.schemas.tables import (
     QualitySchedulerSweepResponse,
     QualitySuiteUpdateRequest,
 )
+from app.services.catalog_access_policy_service import catalog_access_policy_service
 from app.services.catalog_governance_service import catalog_governance_service
 from app.services.catalog_lineage_service import catalog_lineage_service
 from app.services.catalog_metadata_service import CatalogMetadataService
@@ -52,11 +55,15 @@ def list_tables(db: Session = Depends(get_db)) -> DeltaTableListResponse:
 
 
 @router.get("/{table_id}/preview", response_model=DeltaTablePreviewResponse)
-def preview_table(table_id: str, db: Session = Depends(get_db)) -> DeltaTablePreviewResponse:
+def preview_table(
+    table_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> DeltaTablePreviewResponse:
     table = db.query(DeltaTable).filter(DeltaTable.id == table_id).one_or_none()
     if table is None:
         raise HTTPException(status_code=404, detail="Delta table not found")
-    preview = duckdb_service.preview_delta(table)
+    preview = duckdb_service.preview_delta(table, access_context={"role": current_user.role, "email": current_user.email})
     enriched_payload = catalog_metadata_service.enrich_table(table)
     lineage = catalog_lineage_service.build_table_lineage(db, table)
     enriched = DeltaTableRead.model_validate(
@@ -104,6 +111,43 @@ def update_table_contract(table_id: str, payload: DeltaTableContractUpdateReques
         allow_type_changes=payload.contract_allow_type_changes,
         required_columns=payload.contract_required_columns,
         adopt_current_schema=payload.adopt_current_schema,
+    )
+    lineage = catalog_lineage_service.build_table_lineage(db, table)
+    governed = catalog_metadata_service.attach_governance(
+        enriched,
+        catalog_governance_service.build_score(table, enriched, lineage),
+    )
+    return DeltaTableRead.model_validate(governed)
+
+
+@router.put("/{table_id}/access-policy", response_model=DeltaTableRead, dependencies=[Depends(require_roles("admin", "analyst"))])
+def update_table_access_policy(
+    table_id: str,
+    payload: DeltaTableAccessPolicyUpdateRequest,
+    db: Session = Depends(get_db),
+) -> DeltaTableRead:
+    table = db.query(DeltaTable).filter(DeltaTable.id == table_id).one_or_none()
+    if table is None:
+        raise HTTPException(status_code=404, detail="Delta table not found")
+    try:
+        normalized = catalog_access_policy_service.normalize_policy(
+            policy_mode=payload.access_policy_mode,
+            row_filters=[rule.model_dump() for rule in payload.row_filters],
+            column_masks=[rule.model_dump() for rule in payload.column_masks],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    schema_columns = {field.get("name") for field in (table.schema_json or []) if field.get("name")}
+    invalid_masks = [rule["column"] for rule in normalized["column_masks"] if rule["column"] not in schema_columns]
+    if invalid_masks:
+        raise HTTPException(status_code=400, detail=f"Mask columns are not present in the table schema: {', '.join(invalid_masks)}")
+
+    enriched = catalog_metadata_service.update_access_policy(
+        table,
+        policy_mode=normalized["access_policy_mode"],
+        row_filters=normalized["row_filters"],
+        column_masks=normalized["column_masks"],
     )
     lineage = catalog_lineage_service.build_table_lineage(db, table)
     governed = catalog_metadata_service.attach_governance(

@@ -8,6 +8,7 @@ from fastapi.encoders import jsonable_encoder
 
 from app.models.catalog import DeltaTable as DeltaTableModel
 from app.models.catalog import UploadedFile
+from app.services.catalog_access_policy_service import catalog_access_policy_service
 from app.utils.naming import slugify_identifier
 
 
@@ -358,10 +359,22 @@ class DuckDBService:
         conn: duckdb.DuckDBPyConnection,
         table_record: DeltaTableModel,
         alias: str | None = None,
+        access_context: dict | None = None,
     ) -> str:
         view_name = alias or slugify_identifier(table_record.name)
         arrow_table = DeltaTable(table_record.storage_path).to_pyarrow_table()
-        conn.register(view_name, arrow_table)
+        policy_source_view = f"__datawizz_source_{view_name}"
+        policy_sql = catalog_access_policy_service.compile_policy_view_sql(
+            table_record,
+            source_view=policy_source_view,
+            public_view=view_name,
+            access_context=access_context,
+        )
+        if policy_sql:
+            conn.register(policy_source_view, arrow_table)
+            conn.execute(policy_sql)
+        else:
+            conn.register(view_name, arrow_table)
         return view_name
 
     def execute_query(
@@ -370,6 +383,7 @@ class DuckDBService:
         uploaded_files: list[UploadedFile],
         delta_tables: list[DeltaTableModel],
         limit: int | None = None,
+        access_context: dict | None = None,
     ) -> dict:
         conn = self.connect()
         try:
@@ -378,7 +392,7 @@ class DuckDBService:
                 view_name = self.register_uploaded_file(conn, file_record)
                 registered_views["raw"][file_record.id] = view_name
             for table_record in delta_tables:
-                view_name = self.register_delta_table(conn, table_record)
+                view_name = self.register_delta_table(conn, table_record, access_context=access_context)
                 registered_views["curated"][table_record.id] = view_name
 
             effective_sql = sql.strip().rstrip(";")
@@ -484,16 +498,20 @@ class DuckDBService:
         finally:
             conn.close()
 
-    def preview_delta(self, table_record: DeltaTableModel, limit: int = 20) -> dict:
-        delta_table = DeltaTable(table_record.storage_path)
-        arrow_table = delta_table.to_pyarrow_table()
-        sliced = arrow_table.slice(0, limit)
-        return {
-            "columns": sliced.column_names,
-            "rows": self._normalize_rows(sliced.to_pylist()),
-            "row_count": arrow_table.num_rows,
-            "schema": [{"name": field.name, "type": str(field.type)} for field in arrow_table.schema],
-        }
+    def preview_delta(self, table_record: DeltaTableModel, limit: int = 20, access_context: dict | None = None) -> dict:
+        conn = self.connect()
+        try:
+            view_name = self.register_delta_table(conn, table_record, alias="preview_source", access_context=access_context)
+            preview = conn.execute(f"SELECT * FROM {view_name} LIMIT {limit}").fetch_arrow_table()
+            count = conn.execute(f"SELECT COUNT(*) AS total FROM {view_name}").fetchone()[0]
+            return {
+                "columns": preview.column_names,
+                "rows": self._normalize_rows(preview.to_pylist()),
+                "row_count": int(count or 0),
+                "schema": [{"name": field.name, "type": str(field.type)} for field in preview.schema],
+            }
+        finally:
+            conn.close()
 
     def register_arrow(self, conn: duckdb.DuckDBPyConnection, name: str, table: pa.Table) -> None:
         conn.register(name, table)
