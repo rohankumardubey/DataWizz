@@ -151,6 +151,7 @@ Pipeline payload shape:
 - `DELETE /api/bi/metrics/{metric_id}`
 - `GET /api/bi/charts`
 - `POST /api/bi/charts`
+- `POST /api/bi/charts/generate`
 - `POST /api/bi/charts/preview`
 - `GET /api/bi/dashboards`
 - `POST /api/bi/dashboards`

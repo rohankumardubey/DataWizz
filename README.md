@@ -135,6 +135,7 @@ It is especially useful when you want to demonstrate:
 
 - Semantic dataset explorer
 - Governed semantic metrics layer with certified aggregate definitions and DuckDB previews
+- Natural-language chart generation that maps plain-English prompts to datasets, SQL, and chart configs
 - Dataset-driven chart builder
 - Saved chart library with traceability into dashboards and report schedules
 - Dashboard builder and dashboard viewer
@@ -368,7 +369,7 @@ The repository-integrity check specifically verifies that critical frontend libr
 - Visual pipeline builder validation, join and aggregation guardrails, retries, logs filtering, and recurring scheduler execution
 - OpenLineage-compatible pipeline and notebook lifecycle events with local retention, dataset inputs/outputs, and optional HTTP delivery
 - Engine Lab notebooks with DuckDB, PySpark, and DataFusion runtimes, saved snippets, collaboration basics, and persisted cell outputs
-- BI dataset explorer, semantic metrics layer, chart builder, saved charts, dashboard builder and viewer, filters, and report scheduler with stored artifacts
+- BI dataset explorer, semantic metrics layer, natural-language chart generation, chart builder, saved charts, dashboard builder and viewer, filters, and report scheduler with stored artifacts
 - Embedded Superset runtime with a shared serving catalog and auto-provisioned `DataWizz Serving Catalog` connection
 - Clean-clone CI gates for repository integrity, frontend build, backend smoke tests, and Compose validation
 
@@ -379,7 +380,6 @@ The repository-integrity check specifically verifies that critical frontend libr
 - OpenLineage coverage for SQL and reports plus additional external transport authentication modes
 - Hive Metastore or Nessie-backed catalog options
 - Notebook export artifacts and richer collaboration flows
-- Natural-language chart generation
 - Dashboard sharing and permissions
 - Alerts, subscriptions, and richer export delivery
 - Deployment automation, monitoring, and Kubernetes packaging

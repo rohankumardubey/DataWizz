@@ -15,6 +15,7 @@ import type {
   DemoUser,
   EngineCatalog,
   FilePreview,
+  GeneratedChart,
   GlobalSearchResult,
   JobLog,
   NotebookCell,
@@ -303,6 +304,8 @@ export const api = {
       method: 'POST',
       body: json(payload),
     }),
+  generateChart: (payload: { prompt: string; dataset_id?: string | null; limit?: number }) =>
+    request<GeneratedChart>('/bi/charts/generate', { method: 'POST', body: json(payload) }),
   getChartTraceability: (chartId: string) =>
     request<ChartTraceability>(`/bi/charts/${encodeURIComponent(chartId)}/traceability`),
   listDashboards: () => request<ListResponse<Dashboard>>('/bi/dashboards'),

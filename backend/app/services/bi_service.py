@@ -164,6 +164,297 @@ class BiService:
         metrics = db.query(SemanticMetric).order_by(SemanticMetric.updated_at.desc()).all()
         return [self.serialize_metric(db, metric) for metric in metrics]
 
+    def generate_chart_from_prompt(self, db: Session, *, prompt: str, dataset_id: str | None = None, limit: int = 12) -> dict:
+        cleaned_prompt = " ".join(str(prompt or "").strip().split())
+        if not cleaned_prompt:
+            raise ValueError("Prompt is required")
+
+        datasets = db.query(SemanticDataset).order_by(SemanticDataset.updated_at.desc()).all()
+        if not datasets:
+            raise ValueError("No semantic datasets are available for chart generation")
+
+        dataset = self._choose_chart_dataset(db, cleaned_prompt, datasets, dataset_id)
+        if dataset.source_type != "delta_table":
+            raise ValueError("Natural-language chart generation currently supports Delta-backed semantic datasets")
+
+        schema = dataset.schema_json or []
+        metric = self._choose_chart_metric(db, cleaned_prompt, dataset, schema)
+        dimension = self._choose_chart_dimension(cleaned_prompt, dataset, schema)
+        chart_type = self._choose_chart_type(cleaned_prompt, dimension)
+        if chart_type != "kpi" and dimension is None:
+            dimension = self._first_dimension(schema)
+            if dimension is None:
+                chart_type = "kpi"
+
+        safe_limit = limit if isinstance(limit, int) and limit > 0 else 12
+        metric_alias = metric["alias"]
+        sql = self._build_generated_chart_sql(
+            dataset=dataset,
+            chart_type=chart_type,
+            dimension=dimension,
+            metric_expression=metric["expression"],
+            metric_alias=metric_alias,
+            limit=safe_limit,
+        )
+        readable_metric = metric["label"].replace("_", " ")
+        readable_dimension = (dimension or "").replace("_", " ")
+        name = (
+            f"{readable_metric} KPI"
+            if chart_type == "kpi"
+            else f"{readable_metric} by {readable_dimension}".strip()
+        ).title()
+        confidence = 0.55 + (0.15 if metric["matched"] else 0) + (0.15 if dimension else 0) + (0.1 if dataset_id else 0)
+        confidence = min(confidence, 0.95)
+        rationale = [
+            f"Selected semantic dataset '{dataset.name}' from source '{dataset.source_ref}'.",
+            f"Mapped the requested measure to {metric['label']}.",
+        ]
+        assumptions = []
+        if chart_type == "kpi":
+            rationale.append("No grouping dimension was required, so a KPI chart was generated.")
+        else:
+            rationale.append(f"Grouped by '{dimension}' based on the prompt and dataset schema.")
+        if not metric["matched"]:
+            assumptions.append("No exact metric phrase was found, so the first likely numeric measure was used.")
+        if chart_type != "kpi" and not self._prompt_mentions_any(cleaned_prompt, [str(dimension)]):
+            assumptions.append("The grouping dimension was inferred from dataset metadata.")
+
+        return {
+            "name": name,
+            "chart_type": chart_type,
+            "dataset_id": dataset.id,
+            "dataset_name": dataset.name,
+            "source_ref": dataset.source_ref,
+            "query_sql": sql,
+            "config_json": {
+                "chartType": chart_type,
+                "datasetName": dataset.name,
+                "sourceRef": dataset.source_ref,
+                "dimensionKey": None if chart_type == "kpi" else dimension,
+                "metricKey": metric["key"],
+                "metricAlias": metric_alias,
+                "sortBy": "dimension" if chart_type in {"line", "timeseries"} else "value",
+                "sortDirection": "asc" if chart_type in {"line", "timeseries"} else "desc",
+                "rowLimit": safe_limit,
+                "xAxisLabel": None if chart_type == "kpi" else dimension,
+                "yAxisLabel": None if chart_type == "kpi" else metric_alias,
+                "color": "#0b7285",
+                "fillColor": "#d9f0f2",
+                "numberFormat": metric.get("format") or self._infer_number_format(cleaned_prompt),
+                "showLegend": chart_type in {"pie", "donut"},
+                "kpiSubtitle": metric["label"] if chart_type == "kpi" else None,
+                "generatedBy": "deterministic_nl_chart_planner",
+                "naturalLanguagePrompt": cleaned_prompt,
+            },
+            "confidence": round(confidence, 2),
+            "rationale": rationale,
+            "assumptions": assumptions,
+        }
+
+    def _choose_chart_dataset(
+        self,
+        db: Session,
+        prompt: str,
+        datasets: list[SemanticDataset],
+        dataset_id: str | None,
+    ) -> SemanticDataset:
+        if dataset_id:
+            dataset = db.query(SemanticDataset).filter(SemanticDataset.id == dataset_id).one_or_none()
+            if dataset is None:
+                raise ValueError("Selected semantic dataset was not found")
+            return dataset
+
+        scored: list[tuple[int, SemanticDataset]] = []
+        lowered = prompt.lower()
+        for dataset in datasets:
+            haystack_parts = [
+                dataset.name,
+                dataset.source_ref,
+                dataset.description or "",
+                " ".join(str(field.get("name", "")) for field in (dataset.schema_json or []) if isinstance(field, dict)),
+                " ".join(str(item.get("name", item.get("label", ""))) for item in (dataset.metrics_json or []) if isinstance(item, dict)),
+                " ".join(str(item.get("name", item.get("label", ""))) for item in (dataset.dimensions_json or []) if isinstance(item, dict)),
+            ]
+            haystack = " ".join(haystack_parts).lower()
+            score = sum(1 for token in self._prompt_tokens(lowered) if token in haystack)
+            scored.append((score, dataset))
+        scored.sort(key=lambda item: (item[0], item[1].updated_at), reverse=True)
+        return scored[0][1]
+
+    def _choose_chart_metric(self, db: Session, prompt: str, dataset: SemanticDataset, schema: list[dict]) -> dict:
+        prompt_lower = prompt.lower()
+        registered_metrics = db.query(SemanticMetric).filter(SemanticMetric.dataset_id == dataset.id).order_by(SemanticMetric.updated_at.desc()).all()
+        candidates: list[dict] = []
+        for metric in registered_metrics:
+            candidates.append(
+                {
+                    "key": f"governed:{metric.id}",
+                    "label": metric.label or metric.name,
+                    "expression": metric.expression,
+                    "alias": self._safe_alias(metric.name),
+                    "format": metric.format,
+                    "matched": False,
+                }
+            )
+        for metric in dataset.metrics_json or []:
+            if isinstance(metric, dict):
+                name = str(metric.get("name") or metric.get("label") or "metric_value")
+                candidates.append(
+                    {
+                        "key": f"semantic:{name}",
+                        "label": name,
+                        "expression": str(metric.get("expression") or self._quote_identifier(name)),
+                        "alias": self._safe_alias(name),
+                        "format": str(metric.get("format") or self._infer_number_format(prompt)),
+                        "matched": False,
+                    }
+                )
+
+        numeric_fields = [field for field in schema if self._is_numeric_type(str(field.get("type", "")))]
+        aggregate = "AVG" if any(word in prompt_lower for word in ["average", "avg", "mean"]) else "COUNT" if any(word in prompt_lower for word in ["count", "number of", "how many"]) else "SUM"
+        for field in numeric_fields:
+            column = str(field.get("name"))
+            candidates.append(
+                {
+                    "key": f"{aggregate.lower()}:{column}",
+                    "label": f"{aggregate.lower()}_{column}",
+                    "expression": "COUNT(*)" if aggregate == "COUNT" else f"{aggregate}({self._quote_identifier(column)})",
+                    "alias": self._safe_alias(f"{aggregate.lower()}_{column}"),
+                    "format": self._infer_number_format(prompt),
+                    "matched": False,
+                }
+            )
+        if not candidates:
+            candidates.append(
+                {
+                    "key": "count:rows",
+                    "label": "row_count",
+                    "expression": "COUNT(*)",
+                    "alias": "row_count",
+                    "format": "integer",
+                    "matched": any(word in prompt_lower for word in ["count", "number", "rows"]),
+                }
+            )
+
+        best_score = -1
+        best = candidates[0]
+        for candidate in candidates:
+            terms = self._prompt_tokens(str(candidate["label"]).lower())
+            score = sum(2 for term in terms if term in prompt_lower)
+            if "revenue" in str(candidate["label"]).lower() and any(word in prompt_lower for word in ["sales", "revenue", "money"]):
+                score += 2
+            if score > best_score:
+                best_score = score
+                best = candidate
+        best["matched"] = best_score > 0
+        return best
+
+    def _choose_chart_dimension(self, prompt: str, dataset: SemanticDataset, schema: list[dict]) -> str | None:
+        prompt_lower = prompt.lower()
+        dimensions = []
+        for item in dataset.dimensions_json or []:
+            if isinstance(item, dict) and item.get("name"):
+                dimensions.append(str(item["name"]))
+        dimensions.extend(str(field.get("name")) for field in schema if field.get("name") and not self._is_numeric_type(str(field.get("type", ""))))
+        dimensions = list(dict.fromkeys(dimensions))
+        if not dimensions:
+            return None
+
+        by_match = re.search(r"\bby\s+([a-zA-Z0-9_ ]+)", prompt_lower)
+        if by_match:
+            requested = by_match.group(1).strip()
+            for dimension in dimensions:
+                normalized = dimension.replace("_", " ").lower()
+                if normalized in requested or requested in normalized:
+                    return dimension
+
+        if any(term in prompt_lower for term in ["over time", "trend", "daily", "monthly", "weekly", "date"]):
+            temporal = self._first_temporal_dimension(schema, dimensions)
+            if temporal:
+                return temporal
+
+        for dimension in dimensions:
+            normalized = dimension.replace("_", " ").lower()
+            if normalized in prompt_lower or any(token in prompt_lower for token in normalized.split()):
+                return dimension
+        return dimensions[0]
+
+    def _choose_chart_type(self, prompt: str, dimension: str | None) -> str:
+        lowered = prompt.lower()
+        if any(word in lowered for word in ["kpi", "total", "single number", "scorecard"]) and not any(word in lowered for word in [" by ", "over time", "trend"]):
+            return "kpi"
+        if any(word in lowered for word in ["over time", "trend", "daily", "monthly", "weekly", "date"]):
+            return "timeseries"
+        if any(word in lowered for word in ["pie", "share", "split", "distribution"]):
+            return "donut"
+        if any(word in lowered for word in ["line"]):
+            return "line"
+        if any(word in lowered for word in ["area"]):
+            return "area"
+        return "bar" if dimension else "kpi"
+
+    def _build_generated_chart_sql(
+        self,
+        *,
+        dataset: SemanticDataset,
+        chart_type: str,
+        dimension: str | None,
+        metric_expression: str,
+        metric_alias: str,
+        limit: int,
+    ) -> str:
+        source = self._quote_identifier(dataset.source_ref)
+        alias = self._quote_identifier(metric_alias)
+        if chart_type == "kpi":
+            return f"SELECT {metric_expression} AS {alias}\nFROM {source}"
+
+        order_by = "1 ASC" if chart_type in {"line", "timeseries"} else "2 DESC"
+        return (
+            f"SELECT {self._quote_identifier(str(dimension))} AS \"dimension\", {metric_expression} AS {alias}\n"
+            f"FROM {source}\n"
+            "GROUP BY 1\n"
+            f"ORDER BY {order_by}\n"
+            f"LIMIT {limit}"
+        )
+
+    def _prompt_tokens(self, value: str) -> list[str]:
+        return [token for token in re.split(r"[^a-zA-Z0-9_]+", value.lower()) if len(token) >= 3]
+
+    def _prompt_mentions_any(self, prompt: str, values: list[str]) -> bool:
+        lowered = prompt.lower()
+        return any(value and value.replace("_", " ").lower() in lowered for value in values)
+
+    def _is_numeric_type(self, type_name: str) -> bool:
+        return bool(re.search(r"(int|float|double|decimal|bigint|numeric|real)", type_name.lower()))
+
+    def _first_dimension(self, schema: list[dict]) -> str | None:
+        for field in schema:
+            if field.get("name") and not self._is_numeric_type(str(field.get("type", ""))):
+                return str(field["name"])
+        return None
+
+    def _first_temporal_dimension(self, schema: list[dict], dimensions: list[str]) -> str | None:
+        for field in schema:
+            name = str(field.get("name") or "")
+            type_name = str(field.get("type") or "")
+            if name in dimensions and (re.search(r"(date|time|timestamp)", type_name.lower()) or re.search(r"(date|time|month|year|day)", name.lower())):
+                return name
+        return None
+
+    def _safe_alias(self, value: str) -> str:
+        alias = re.sub(r"[^a-zA-Z0-9_]+", "_", str(value).strip().lower()).strip("_")
+        return alias or "metric_value"
+
+    def _infer_number_format(self, prompt: str) -> str:
+        lowered = prompt.lower()
+        if any(word in lowered for word in ["revenue", "sales", "cost", "profit", "amount", "currency", "price"]):
+            return "currency"
+        if any(word in lowered for word in ["percent", "percentage", "rate", "ratio"]):
+            return "percent"
+        if any(word in lowered for word in ["count", "number of", "how many"]):
+            return "integer"
+        return "number"
+
     def build_metric_preview(self, db: Session, metric: SemanticMetric, *, dimensions: list[str], where_sql: str | None, limit: int) -> dict:
         dataset = db.query(SemanticDataset).filter(SemanticDataset.id == metric.dataset_id).one_or_none()
         if dataset is None:
@@ -280,12 +571,13 @@ class BiService:
             "schema_json": safe_schema,
         }
 
-    def preview_chart(self, db: Session, sql: str, limit: int = 200) -> dict:
+    def preview_chart(self, db: Session, sql: str, limit: int = 200, access_context: dict | None = None) -> dict:
         result = self.duckdb_service.execute_query(
             sql,
             uploaded_files=db.query(UploadedFile).all(),
             delta_tables=db.query(DeltaTable).all(),
             limit=limit,
+            access_context=access_context,
         )
         return {
             "columns": result["columns"],

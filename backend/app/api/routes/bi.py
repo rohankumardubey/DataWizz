@@ -29,6 +29,8 @@ from app.schemas.bi import (
     DashboardSnapshotResponse,
     DatasetPreviewResponse,
     DatasetExplorerResponse,
+    NaturalLanguageChartRequest,
+    NaturalLanguageChartResponse,
     ReportScheduleCreateRequest,
     ReportScheduleExecutionResponse,
     ReportScheduleListResponse,
@@ -219,6 +221,20 @@ def list_charts(db: Session = Depends(get_db)) -> ChartListResponse:
     return ChartListResponse(items=items)
 
 
+@router.post("/charts/generate", response_model=NaturalLanguageChartResponse, dependencies=[Depends(require_roles("admin", "analyst"))])
+def generate_chart_from_prompt(payload: NaturalLanguageChartRequest, db: Session = Depends(get_db)) -> NaturalLanguageChartResponse:
+    try:
+        generated = bi_service.generate_chart_from_prompt(
+            db,
+            prompt=payload.prompt,
+            dataset_id=payload.dataset_id,
+            limit=payload.limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return NaturalLanguageChartResponse.model_validate(generated)
+
+
 @router.post("/charts", response_model=ChartRead, dependencies=[Depends(require_roles("admin", "analyst"))])
 def create_chart(payload: ChartCreateRequest, db: Session = Depends(get_db)) -> ChartRead:
     record = Chart(**payload.model_dump())
@@ -260,12 +276,21 @@ def delete_chart(chart_id: str, db: Session = Depends(get_db)) -> ApiMessage:
     return ApiMessage(message="Chart deleted successfully")
 
 
-@router.post("/charts/preview", response_model=ChartPreviewResponse, dependencies=[Depends(require_roles("admin", "analyst"))])
-def preview_chart(payload: dict, db: Session = Depends(get_db)) -> ChartPreviewResponse:
+@router.post("/charts/preview", response_model=ChartPreviewResponse)
+def preview_chart(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "analyst")),
+) -> ChartPreviewResponse:
     sql = payload.get("sql")
     if not sql:
         raise HTTPException(status_code=400, detail="SQL is required")
-    preview = bi_service.preview_chart(db, sql, limit=int(payload.get("limit", 200)))
+    preview = bi_service.preview_chart(
+        db,
+        sql,
+        limit=int(payload.get("limit", 200)),
+        access_context={"role": current_user.role, "email": current_user.email},
+    )
     return ChartPreviewResponse(**preview)
 
 

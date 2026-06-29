@@ -542,6 +542,19 @@ export type Chart = {
   updated_at: string
 }
 
+export type GeneratedChart = {
+  name: string
+  chart_type: 'bar' | 'line' | 'area' | 'pie' | 'donut' | 'timeseries' | 'kpi' | string
+  dataset_id: string
+  dataset_name: string
+  source_ref: string
+  query_sql: string
+  config_json: Record<string, unknown>
+  confidence: number
+  rationale: string[]
+  assumptions: string[]
+}
+
 export type ChartTraceability = {
   chart: Chart
   widget_count: number

@@ -143,6 +143,25 @@ class ChartRead(TimestampedModel):
     model_config = {"from_attributes": True}
 
 
+class NaturalLanguageChartRequest(BaseModel):
+    prompt: str = Field(min_length=3, max_length=500)
+    dataset_id: str | None = None
+    limit: int = Field(default=12, ge=1, le=100)
+
+
+class NaturalLanguageChartResponse(BaseModel):
+    name: str
+    chart_type: str
+    dataset_id: str
+    dataset_name: str
+    source_ref: str
+    query_sql: str
+    config_json: dict
+    confidence: float
+    rationale: list[str]
+    assumptions: list[str] = Field(default_factory=list)
+
+
 class DashboardWidgetPayload(BaseModel):
     id: str | None = None
     chart_id: str | None = None
