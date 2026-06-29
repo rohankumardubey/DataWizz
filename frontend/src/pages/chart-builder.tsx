@@ -137,6 +137,9 @@ export function ChartBuilderPage() {
   const [kpiThresholdValue, setKpiThresholdValue] = useState('')
   const [kpiThresholdDirection, setKpiThresholdDirection] = useState<'>=' | '<='>('>=')
   const [sql, setSql] = useState('')
+  const [askPrompt, setAskPrompt] = useState('show revenue by region')
+  const [generatedConfig, setGeneratedConfig] = useState<Record<string, unknown> | null>(null)
+  const [generationNotes, setGenerationNotes] = useState<string[]>([])
   const [statusMessage, setStatusMessage] = useState('Choose a semantic dataset, pick a dimension and metric, then generate a chart query.')
   const [notebookHandoff, setNotebookHandoff] = useState<NotebookChartHandoff | null>(null)
 
@@ -250,6 +253,33 @@ export function ChartBuilderPage() {
     },
   })
 
+  const generateChartMutation = useMutation({
+    mutationFn: api.generateChart,
+    onSuccess: (generated) => {
+      const config = generated.config_json ?? {}
+      setGeneratedConfig(config)
+      setGenerationNotes([...generated.rationale, ...generated.assumptions])
+      setName(generated.name)
+      setChartType((generated.chart_type as (typeof chartTypes)[number]) || 'bar')
+      setDatasetId(generated.dataset_id)
+      setSql(generated.query_sql)
+      setDimensionKey(String(config.dimensionKey ?? ''))
+      setMetricKey(String(config.metricKey ?? ''))
+      setRowLimit(String(config.rowLimit ?? rowLimit))
+      setSortBy((String(config.sortBy ?? 'value') as 'value' | 'dimension') || 'value')
+      setSortDirection((String(config.sortDirection ?? 'desc') as 'asc' | 'desc') || 'desc')
+      setXAxisLabel(String(config.xAxisLabel ?? config.dimensionKey ?? ''))
+      setYAxisLabel(String(config.yAxisLabel ?? config.metricAlias ?? ''))
+      setColor(String(config.color ?? color))
+      setFillColor(String(config.fillColor ?? fillColor))
+      setNumberFormat((String(config.numberFormat ?? numberFormat) as 'number' | 'currency' | 'percent' | 'compact' | 'integer') || 'number')
+      setShowLegend(Boolean(config.showLegend ?? false))
+      setKpiSubtitle(String(config.kpiSubtitle ?? ''))
+      setStatusMessage(`Ask BI generated ${generated.chart_type} chart SQL with ${Math.round(generated.confidence * 100)}% confidence. Preview it, then save or keep editing.`)
+    },
+    onError: (error: Error) => setStatusMessage(error.message),
+  })
+
   const saveMutation = useMutation({
     mutationFn: api.createChart,
     onSuccess: (chart) => {
@@ -302,7 +332,8 @@ export function ChartBuilderPage() {
     : selectedDatasetSnapshot
       ? selectedDatasetSnapshot.columns
       : previewMutation.data?.columns ?? []
-  const previewValueKey = selectedMetric?.alias || previewColumns[1]
+  const generatedMetricAlias = typeof generatedConfig?.metricAlias === 'string' ? generatedConfig.metricAlias : undefined
+  const previewValueKey = selectedMetric?.alias || generatedMetricAlias || previewColumns[1]
 
   const saveChart = () => {
     if (!sql.trim() && !notebookHandoff && !selectedDatasetSnapshot) {
@@ -316,6 +347,7 @@ export function ChartBuilderPage() {
       dataset_id: datasetId || undefined,
       query_sql: notebookHandoff || selectedDatasetSnapshot ? '-- Notebook snapshot chart from Engine Lab' : sql,
       config_json: {
+        ...(generatedConfig ?? {}),
         chartType,
         datasetName: selectedDataset?.name,
         sourceRef: notebookHandoff
@@ -325,7 +357,7 @@ export function ChartBuilderPage() {
             : selectedDataset?.source_ref,
         dimensionKey: chartType === 'kpi' ? null : dimensionKey,
         metricKey,
-        metricAlias: notebookHandoff || selectedDatasetSnapshot ? (selectedMetric?.alias || previewColumns[1]) : selectedMetric?.alias,
+        metricAlias: notebookHandoff || selectedDatasetSnapshot ? (selectedMetric?.alias || generatedMetricAlias || previewColumns[1]) : selectedMetric?.alias || generatedMetricAlias,
         sortBy,
         sortDirection,
         rowLimit: Number(rowLimit),
@@ -407,6 +439,54 @@ export function ChartBuilderPage() {
           <p className="mt-2 leading-6">{statusMessage}</p>
           <p className="mt-3 text-xs uppercase tracking-[0.2em] text-lagoon/70">Preview does not save the chart. Use “Save Chart” to add it to the Saved Charts library.</p>
         </div>
+      </Panel>
+
+      <Panel className="space-y-4 border-cyan-100 bg-cyan-50/60">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end">
+          <div className="flex-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-lagoon/70">Ask BI</p>
+            <h2 className="mt-2 font-display text-2xl text-ink">Generate a chart from plain English</h2>
+            <p className="mt-2 text-sm leading-6 text-slate/70">
+              Try prompts like “show revenue by region”, “monthly orders over time”, or “total sales KPI”. DataWizz maps your prompt to semantic datasets, metrics, dimensions, SQL, and chart styling.
+            </p>
+          </div>
+          <div className="min-w-0 flex-[1.15]">
+            <Label>Question</Label>
+            <Input value={askPrompt} onChange={(event) => setAskPrompt(event.target.value)} placeholder="show revenue by region over time" />
+          </div>
+          <div className="w-full xl:w-52">
+            <Label>Optional Dataset</Label>
+            <Select value={datasetId} onChange={(event) => setDatasetId(event.target.value)} disabled={Boolean(notebookHandoff)}>
+              <option value="">Auto-select</option>
+              {datasetsQuery.data?.items.map((dataset) => (
+                <option key={dataset.id} value={dataset.id}>
+                  {dataset.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <Button
+            disabled={generateChartMutation.isPending || !askPrompt.trim()}
+            onClick={() =>
+              generateChartMutation.mutate({
+                prompt: askPrompt,
+                dataset_id: datasetId || null,
+                limit: Number(rowLimit) || 12,
+              })
+            }
+          >
+            {generateChartMutation.isPending ? 'Thinking...' : 'Generate Chart'}
+          </Button>
+        </div>
+        {generationNotes.length ? (
+          <div className="grid gap-2 md:grid-cols-2">
+            {generationNotes.map((note) => (
+              <div key={note} className="rounded-2xl bg-white px-4 py-3 text-sm leading-6 text-slate-700">
+                {note}
+              </div>
+            ))}
+          </div>
+        ) : null}
       </Panel>
 
       {datasetsQuery.data?.items?.length || notebookHandoff || selectedDatasetSnapshot ? (
