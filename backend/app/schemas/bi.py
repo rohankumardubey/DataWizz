@@ -117,6 +117,86 @@ class SemanticMetricPreviewResponse(BaseModel):
     row_count: int
 
 
+class MetricAlertCreateRequest(BaseModel):
+    name: str = Field(min_length=1)
+    metric_id: str
+    comparison: str = Field(pattern="^(gt|gte|lt|lte|eq|neq)$")
+    threshold_value: float
+    severity: str = Field(default="warning", pattern="^(info|warning|critical)$")
+    enabled: bool = True
+    notification_channel: str = Field(default="local", pattern="^local$")
+    destination: str | None = None
+
+
+class MetricAlertUpdateRequest(BaseModel):
+    name: str = Field(min_length=1)
+    metric_id: str
+    comparison: str = Field(pattern="^(gt|gte|lt|lte|eq|neq)$")
+    threshold_value: float
+    severity: str = Field(default="warning", pattern="^(info|warning|critical)$")
+    enabled: bool = True
+    notification_channel: str = Field(default="local", pattern="^local$")
+    destination: str | None = None
+
+
+class MetricAlertRead(TimestampedModel):
+    name: str
+    metric_id: str
+    metric_name: str | None = None
+    metric_label: str | None = None
+    dataset_name: str | None = None
+    source_ref: str | None = None
+    comparison: str
+    threshold_value: float
+    severity: str
+    enabled: bool
+    owner_email: str | None = None
+    notification_channel: str
+    destination: str | None = None
+    last_status: str
+    last_value: float | None = None
+    last_message: str | None = None
+    last_evaluated_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class MetricAlertEventRead(TimestampedModel):
+    alert_id: str
+    alert_name: str | None = None
+    metric_id: str | None = None
+    metric_label: str | None = None
+    status: str
+    triggered: bool
+    observed_value: float | None = None
+    threshold_value: float
+    message: str
+    evaluated_at: datetime
+    details_json: dict | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class MetricAlertListResponse(BaseModel):
+    items: list[MetricAlertRead]
+
+
+class MetricAlertEventListResponse(BaseModel):
+    items: list[MetricAlertEventRead]
+
+
+class MetricAlertEvaluationResponse(BaseModel):
+    alert: MetricAlertRead
+    event: MetricAlertEventRead
+
+
+class MetricAlertSweepResponse(BaseModel):
+    checked: int
+    triggered: int
+    errored: int
+    events: list[MetricAlertEventRead]
+
+
 class ChartCreateRequest(BaseModel):
     name: str
     chart_type: str

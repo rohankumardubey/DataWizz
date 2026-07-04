@@ -1,7 +1,7 @@
 import json
 from io import BytesIO
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_current_user, require_roles
 from app.db.session import get_db
 from app.models.auth import User
-from app.models.bi import Chart, Dashboard, ReportSchedule, SemanticDataset, SemanticMetric
+from app.models.bi import Chart, Dashboard, MetricAlert, ReportSchedule, SemanticDataset, SemanticMetric
 from app.schemas.common import ApiMessage
 from app.schemas.bi import (
     ChartListResponse,
@@ -29,6 +29,13 @@ from app.schemas.bi import (
     DashboardSnapshotResponse,
     DatasetPreviewResponse,
     DatasetExplorerResponse,
+    MetricAlertCreateRequest,
+    MetricAlertEvaluationResponse,
+    MetricAlertEventListResponse,
+    MetricAlertListResponse,
+    MetricAlertRead,
+    MetricAlertSweepResponse,
+    MetricAlertUpdateRequest,
     NaturalLanguageChartRequest,
     NaturalLanguageChartResponse,
     ReportScheduleCreateRequest,
@@ -213,6 +220,109 @@ def delete_metric(metric_id: str, db: Session = Depends(get_db)) -> ApiMessage:
     db.delete(record)
     db.commit()
     return ApiMessage(message="Metric deleted successfully")
+
+
+@router.get("/alerts", response_model=MetricAlertListResponse)
+def list_alerts(db: Session = Depends(get_db)) -> MetricAlertListResponse:
+    return MetricAlertListResponse(items=bi_service.list_alerts(db))
+
+
+@router.post("/alerts", response_model=MetricAlertRead, dependencies=[Depends(require_roles("admin", "analyst"))])
+def create_alert(
+    payload: MetricAlertCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MetricAlertRead:
+    metric = db.query(SemanticMetric).filter(SemanticMetric.id == payload.metric_id).one_or_none()
+    if metric is None:
+        raise HTTPException(status_code=404, detail="Metric not found")
+    record = MetricAlert(
+        **{
+            **payload.model_dump(),
+            "name": bi_service.resolve_alert_name(db, payload.name),
+            "owner_email": current_user.email,
+            "last_status": "not_evaluated",
+        }
+    )
+    db.add(record)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="An alert with this name already exists. Please try again.") from exc
+    db.refresh(record)
+    return MetricAlertRead.model_validate(bi_service.serialize_alert(db, record))
+
+
+@router.put("/alerts/{alert_id}", response_model=MetricAlertRead, dependencies=[Depends(require_roles("admin", "analyst"))])
+def update_alert(alert_id: str, payload: MetricAlertUpdateRequest, db: Session = Depends(get_db)) -> MetricAlertRead:
+    record = db.query(MetricAlert).filter(MetricAlert.id == alert_id).one_or_none()
+    if record is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    metric = db.query(SemanticMetric).filter(SemanticMetric.id == payload.metric_id).one_or_none()
+    if metric is None:
+        raise HTTPException(status_code=404, detail="Metric not found")
+
+    data = payload.model_dump()
+    data["name"] = bi_service.resolve_alert_name(db, payload.name, exclude_id=alert_id)
+    for key, value in data.items():
+        setattr(record, key, value)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="An alert with this name already exists. Please try again.") from exc
+    db.refresh(record)
+    return MetricAlertRead.model_validate(bi_service.serialize_alert(db, record))
+
+
+@router.delete("/alerts/{alert_id}", response_model=ApiMessage, dependencies=[Depends(require_roles("admin", "analyst"))])
+def delete_alert(alert_id: str, db: Session = Depends(get_db)) -> ApiMessage:
+    record = db.query(MetricAlert).filter(MetricAlert.id == alert_id).one_or_none()
+    if record is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    db.delete(record)
+    db.commit()
+    return ApiMessage(message="Alert deleted successfully")
+
+
+@router.post("/alerts/{alert_id}/evaluate", response_model=MetricAlertEvaluationResponse, dependencies=[Depends(require_roles("admin", "analyst"))])
+def evaluate_alert(alert_id: str, db: Session = Depends(get_db)) -> MetricAlertEvaluationResponse:
+    record = db.query(MetricAlert).filter(MetricAlert.id == alert_id).one_or_none()
+    if record is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    event = bi_service.evaluate_metric_alert(db, record)
+    db.commit()
+    db.refresh(record)
+    db.refresh(event)
+    return MetricAlertEvaluationResponse(
+        alert=MetricAlertRead.model_validate(bi_service.serialize_alert(db, record)),
+        event=bi_service.serialize_alert_event(db, event),
+    )
+
+
+@router.post("/alerts/evaluate-all", response_model=MetricAlertSweepResponse, dependencies=[Depends(require_roles("admin", "analyst"))])
+def evaluate_all_alerts(db: Session = Depends(get_db)) -> MetricAlertSweepResponse:
+    events = bi_service.evaluate_enabled_metric_alerts(db)
+    db.commit()
+    for event in events:
+        db.refresh(event)
+    serialized_events = [bi_service.serialize_alert_event(db, event) for event in events]
+    return MetricAlertSweepResponse(
+        checked=len(serialized_events),
+        triggered=sum(1 for event in serialized_events if event["triggered"]),
+        errored=sum(1 for event in serialized_events if event["status"] == "error"),
+        events=serialized_events,
+    )
+
+
+@router.get("/alerts/events", response_model=MetricAlertEventListResponse)
+def list_alert_events(
+    alert_id: str | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+) -> MetricAlertEventListResponse:
+    return MetricAlertEventListResponse(items=bi_service.list_alert_events(db, alert_id=alert_id, limit=limit))
 
 
 @router.get("/charts", response_model=ChartListResponse)

@@ -54,6 +54,59 @@ def ensure_runtime_schema(db_engine: Engine) -> None:
                 )
             )
 
+    if "metric_alerts" not in table_names:
+        with db_engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE metric_alerts (
+                        id VARCHAR PRIMARY KEY,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                        name VARCHAR(255) NOT NULL UNIQUE,
+                        metric_id VARCHAR NOT NULL,
+                        comparison VARCHAR(16) NOT NULL,
+                        threshold_value FLOAT NOT NULL,
+                        severity VARCHAR(32) NOT NULL DEFAULT 'warning',
+                        enabled BOOLEAN NOT NULL DEFAULT 1,
+                        owner_email VARCHAR(255),
+                        notification_channel VARCHAR(64) NOT NULL DEFAULT 'local',
+                        destination VARCHAR(255),
+                        last_status VARCHAR(32) NOT NULL DEFAULT 'not_evaluated',
+                        last_value FLOAT,
+                        last_message TEXT,
+                        last_evaluated_at DATETIME,
+                        FOREIGN KEY(metric_id) REFERENCES semantic_metrics(id) ON DELETE CASCADE
+                    )
+                    """
+                )
+            )
+
+    if "metric_alert_events" not in table_names:
+        with db_engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE metric_alert_events (
+                        id VARCHAR PRIMARY KEY,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                        alert_id VARCHAR NOT NULL,
+                        metric_id VARCHAR,
+                        status VARCHAR(32) NOT NULL,
+                        triggered BOOLEAN NOT NULL DEFAULT 0,
+                        observed_value FLOAT,
+                        threshold_value FLOAT NOT NULL,
+                        message TEXT NOT NULL,
+                        evaluated_at DATETIME NOT NULL,
+                        details_json JSON,
+                        FOREIGN KEY(alert_id) REFERENCES metric_alerts(id) ON DELETE CASCADE,
+                        FOREIGN KEY(metric_id) REFERENCES semantic_metrics(id) ON DELETE SET NULL
+                    )
+                    """
+                )
+            )
+
     if "quality_runs" in table_names:
         quality_run_columns = {column["name"] for column in inspector.get_columns("quality_runs")}
         if "execution_engine" not in quality_run_columns:

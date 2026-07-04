@@ -531,6 +531,58 @@ export type SemanticMetricPreview = {
   row_count: number
 }
 
+export type MetricAlert = {
+  id: string
+  name: string
+  metric_id: string
+  metric_name?: string | null
+  metric_label?: string | null
+  dataset_name?: string | null
+  source_ref?: string | null
+  comparison: 'gt' | 'gte' | 'lt' | 'lte' | 'eq' | 'neq'
+  threshold_value: number
+  severity: 'info' | 'warning' | 'critical'
+  enabled: boolean
+  owner_email?: string | null
+  notification_channel: 'local' | string
+  destination?: string | null
+  last_status: 'not_evaluated' | 'ok' | 'triggered' | 'error' | string
+  last_value?: number | null
+  last_message?: string | null
+  last_evaluated_at?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type MetricAlertEvent = {
+  id: string
+  alert_id: string
+  alert_name?: string | null
+  metric_id?: string | null
+  metric_label?: string | null
+  status: 'ok' | 'triggered' | 'error' | string
+  triggered: boolean
+  observed_value?: number | null
+  threshold_value: number
+  message: string
+  evaluated_at: string
+  details_json?: Record<string, unknown> | null
+  created_at: string
+  updated_at: string
+}
+
+export type MetricAlertEvaluation = {
+  alert: MetricAlert
+  event: MetricAlertEvent
+}
+
+export type MetricAlertSweep = {
+  checked: number
+  triggered: number
+  errored: number
+  events: MetricAlertEvent[]
+}
+
 export type Chart = {
   id: string
   name: string

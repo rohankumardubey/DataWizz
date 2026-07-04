@@ -30,6 +30,7 @@ const navGroups = [
       { label: 'BI Home', to: '/bi', icon: LayoutDashboard, end: true },
       { label: 'Datasets', to: '/bi/datasets', icon: Database, end: true, roles: ['admin', 'analyst'] },
       { label: 'Metrics Layer', to: '/bi/metrics', icon: Sigma, end: true, roles: ['admin', 'analyst'] },
+      { label: 'Metric Alerts', to: '/bi/alerts', icon: Bell, end: true, roles: ['admin', 'analyst'] },
       { label: 'Chart Builder', to: '/bi/charts/new', icon: LineChart, end: true, roles: ['admin', 'analyst'] },
       { label: 'Saved Charts', to: '/bi/charts', icon: LineChart, end: true },
       { label: 'Dashboard Builder', to: '/bi/dashboards/new', icon: LayoutDashboard, end: true, roles: ['admin', 'analyst'] },
