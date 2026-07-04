@@ -18,6 +18,10 @@ import type {
   GeneratedChart,
   GlobalSearchResult,
   JobLog,
+  MetricAlert,
+  MetricAlertEvaluation,
+  MetricAlertEvent,
+  MetricAlertSweep,
   NotebookCell,
   NotebookCellActionExecution,
   NotebookDetail,
@@ -294,6 +298,19 @@ export const api = {
       body: json(payload),
     }),
   deleteMetric: (metricId: string) => request<ApiMessage>(`/bi/metrics/${encodeURIComponent(metricId)}`, { method: 'DELETE' }),
+  listMetricAlerts: () => request<ListResponse<MetricAlert>>('/bi/alerts'),
+  createMetricAlert: (payload: JsonBody) =>
+    request<MetricAlert>('/bi/alerts', { method: 'POST', body: json(payload) }),
+  updateMetricAlert: (alertId: string, payload: JsonBody) =>
+    request<MetricAlert>(`/bi/alerts/${encodeURIComponent(alertId)}`, { method: 'PUT', body: json(payload) }),
+  deleteMetricAlert: (alertId: string) =>
+    request<ApiMessage>(`/bi/alerts/${encodeURIComponent(alertId)}`, { method: 'DELETE' }),
+  evaluateMetricAlert: (alertId: string) =>
+    request<MetricAlertEvaluation>(`/bi/alerts/${encodeURIComponent(alertId)}/evaluate`, { method: 'POST' }),
+  evaluateAllMetricAlerts: () =>
+    request<MetricAlertSweep>('/bi/alerts/evaluate-all', { method: 'POST' }),
+  listMetricAlertEvents: (filters: { alert_id?: string; limit?: number } = {}) =>
+    request<ListResponse<MetricAlertEvent>>(`/bi/alerts/events${queryString(filters)}`),
   listCharts: () => request<ListResponse<Chart>>('/bi/charts'),
   createChart: (payload: JsonBody) => request<Chart>('/bi/charts', { method: 'POST', body: json(payload) }),
   updateChart: (chartId: string, payload: JsonBody) =>

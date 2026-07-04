@@ -5,6 +5,7 @@ import { api } from '../lib/api'
 export function BiHomePage() {
   const datasetsQuery = useQuery({ queryKey: ['bi', 'datasets'], queryFn: api.listDatasets })
   const metricsQuery = useQuery({ queryKey: ['bi', 'metrics'], queryFn: api.listMetrics })
+  const alertsQuery = useQuery({ queryKey: ['bi', 'metric-alerts'], queryFn: api.listMetricAlerts })
   const chartsQuery = useQuery({ queryKey: ['bi', 'charts'], queryFn: api.listCharts })
   const dashboardsQuery = useQuery({ queryKey: ['bi', 'dashboards'], queryFn: api.listDashboards })
 
@@ -16,9 +17,10 @@ export function BiHomePage() {
         description="Turn curated Delta Lake assets into reusable datasets, visual charts, and dashboards that feel closer to an internal Superset or Databricks SQL experience."
       />
 
-      <section className="grid gap-4 lg:grid-cols-4">
+      <section className="grid gap-4 lg:grid-cols-5">
         <StatCard label="Datasets" value={String((datasetsQuery.data?.items?.length ?? 0) + (datasetsQuery.data?.candidates?.length ?? 0))} accent="bg-gradient-to-br from-cyan-200 to-lagoon" subtext="Stored semantic datasets plus available curated candidates." />
         <StatCard label="Metrics" value={String(metricsQuery.data?.items?.length ?? 0)} accent="bg-gradient-to-br from-lime-200 to-emerald-500" subtext="Certified business definitions for reusable KPIs." />
+        <StatCard label="Alerts" value={String(alertsQuery.data?.items?.length ?? 0)} accent="bg-gradient-to-br from-rose-200 to-red-500" subtext="Local threshold checks over governed metrics." />
         <StatCard label="Charts" value={String(chartsQuery.data?.items?.length ?? 0)} accent="bg-gradient-to-br from-orange-200 to-signal" subtext="Saved KPI, trend, and categorical visualizations." />
         <StatCard label="Dashboards" value={String(dashboardsQuery.data?.items?.length ?? 0)} accent="bg-gradient-to-br from-sky-200 to-blue-500" subtext="Layout-managed reporting surfaces for internal stakeholders." />
       </section>
@@ -41,7 +43,7 @@ export function BiHomePage() {
               'Natural language to chart generation',
               'Embedded analytics and dashboard sharing',
               'Metric-to-chart handoff with certified KPI templates',
-              'Alerting and subscriptions for KPI thresholds',
+              'External alert delivery for Slack, email, and webhooks',
             ].map((item) => (
               <div key={item} className="rounded-2xl bg-slate-50 p-4">
                 {item}

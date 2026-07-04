@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.auth import User
-from app.models.bi import Chart, Dashboard, DashboardWidget, ReportSchedule, ReportSnapshot, SemanticDataset, SemanticMetric
+from app.models.bi import Chart, Dashboard, DashboardWidget, MetricAlert, MetricAlertEvent, ReportSchedule, ReportSnapshot, SemanticDataset, SemanticMetric
 from app.models.catalog import DeltaTable, UploadedFile
 from app.services.duckdb_service import DuckDBService
 from app.utils.naming import slugify_identifier
@@ -140,6 +140,20 @@ class BiService:
             candidate = f"{base_name} ({suffix})"
             suffix += 1
 
+    def resolve_alert_name(self, db: Session, desired_name: str, *, exclude_id: str | None = None) -> str:
+        base_name = desired_name.strip() or "Untitled Metric Alert"
+        candidate = base_name
+        suffix = 2
+
+        while True:
+            query = db.query(MetricAlert).filter(MetricAlert.name == candidate)
+            if exclude_id is not None:
+                query = query.filter(MetricAlert.id != exclude_id)
+            if query.one_or_none() is None:
+                return candidate
+            candidate = f"{base_name} ({suffix})"
+            suffix += 1
+
     def serialize_metric(self, db: Session, metric: SemanticMetric) -> dict:
         dataset = db.query(SemanticDataset).filter(SemanticDataset.id == metric.dataset_id).one_or_none()
         return {
@@ -163,6 +177,180 @@ class BiService:
     def list_metrics(self, db: Session) -> list[dict]:
         metrics = db.query(SemanticMetric).order_by(SemanticMetric.updated_at.desc()).all()
         return [self.serialize_metric(db, metric) for metric in metrics]
+
+    def serialize_alert(self, db: Session, alert: MetricAlert) -> dict:
+        metric = db.query(SemanticMetric).filter(SemanticMetric.id == alert.metric_id).one_or_none()
+        dataset = db.query(SemanticDataset).filter(SemanticDataset.id == metric.dataset_id).one_or_none() if metric else None
+        return {
+            "id": alert.id,
+            "created_at": alert.created_at,
+            "updated_at": alert.updated_at,
+            "name": alert.name,
+            "metric_id": alert.metric_id,
+            "metric_name": metric.name if metric else None,
+            "metric_label": metric.label if metric else None,
+            "dataset_name": dataset.name if dataset else None,
+            "source_ref": dataset.source_ref if dataset else None,
+            "comparison": alert.comparison,
+            "threshold_value": alert.threshold_value,
+            "severity": alert.severity,
+            "enabled": alert.enabled,
+            "owner_email": alert.owner_email,
+            "notification_channel": alert.notification_channel,
+            "destination": alert.destination,
+            "last_status": alert.last_status,
+            "last_value": alert.last_value,
+            "last_message": alert.last_message,
+            "last_evaluated_at": alert.last_evaluated_at,
+        }
+
+    def serialize_alert_event(self, db: Session, event: MetricAlertEvent) -> dict:
+        alert = db.query(MetricAlert).filter(MetricAlert.id == event.alert_id).one_or_none()
+        metric = db.query(SemanticMetric).filter(SemanticMetric.id == event.metric_id).one_or_none() if event.metric_id else None
+        return {
+            "id": event.id,
+            "created_at": event.created_at,
+            "updated_at": event.updated_at,
+            "alert_id": event.alert_id,
+            "alert_name": alert.name if alert else None,
+            "metric_id": event.metric_id,
+            "metric_label": metric.label if metric else None,
+            "status": event.status,
+            "triggered": event.triggered,
+            "observed_value": event.observed_value,
+            "threshold_value": event.threshold_value,
+            "message": event.message,
+            "evaluated_at": event.evaluated_at,
+            "details_json": event.details_json,
+        }
+
+    def list_alerts(self, db: Session) -> list[dict]:
+        alerts = db.query(MetricAlert).order_by(MetricAlert.updated_at.desc()).all()
+        return [self.serialize_alert(db, alert) for alert in alerts]
+
+    def list_alert_events(self, db: Session, *, alert_id: str | None = None, limit: int = 50) -> list[dict]:
+        query = db.query(MetricAlertEvent)
+        if alert_id is not None:
+            query = query.filter(MetricAlertEvent.alert_id == alert_id)
+        events = query.order_by(MetricAlertEvent.created_at.desc()).limit(max(1, min(limit, 200))).all()
+        return [self.serialize_alert_event(db, event) for event in events]
+
+    def evaluate_metric_alert(self, db: Session, alert: MetricAlert) -> MetricAlertEvent:
+        evaluated_at = datetime.now(timezone.utc)
+        metric = db.query(SemanticMetric).filter(SemanticMetric.id == alert.metric_id).one_or_none()
+        status = "error"
+        triggered = False
+        observed_value: float | None = None
+        details: dict | None = None
+
+        if metric is None:
+            message = "The linked semantic metric could not be found."
+        else:
+            try:
+                observed_value, sql = self.evaluate_metric_value(db, metric)
+                triggered = self._compare_metric_value(observed_value, alert.comparison, alert.threshold_value)
+                status = "triggered" if triggered else "ok"
+                message = self._metric_alert_message(
+                    metric_label=metric.label,
+                    observed_value=observed_value,
+                    comparison=alert.comparison,
+                    threshold=alert.threshold_value,
+                    triggered=triggered,
+                )
+                details = {"sql": sql, "metric_name": metric.name}
+            except Exception as exc:  # noqa: BLE001 - alert evaluation records failures instead of hiding them.
+                message = f"Metric evaluation failed: {exc}"
+                details = {"metric_name": metric.name}
+
+        event = MetricAlertEvent(
+            alert_id=alert.id,
+            metric_id=metric.id if metric else alert.metric_id,
+            status=status,
+            triggered=triggered,
+            observed_value=observed_value,
+            threshold_value=alert.threshold_value,
+            message=message,
+            evaluated_at=evaluated_at,
+            details_json=details,
+        )
+        db.add(event)
+
+        alert.last_status = status
+        alert.last_value = observed_value
+        alert.last_message = message
+        alert.last_evaluated_at = evaluated_at
+        return event
+
+    def evaluate_enabled_metric_alerts(self, db: Session) -> list[MetricAlertEvent]:
+        alerts = db.query(MetricAlert).filter(MetricAlert.enabled.is_(True)).order_by(MetricAlert.updated_at.desc()).all()
+        return [self.evaluate_metric_alert(db, alert) for alert in alerts]
+
+    def evaluate_metric_value(self, db: Session, metric: SemanticMetric) -> tuple[float, str]:
+        dataset = db.query(SemanticDataset).filter(SemanticDataset.id == metric.dataset_id).one_or_none()
+        if dataset is None:
+            raise ValueError("Metric dataset not found")
+        if dataset.source_type != "delta_table":
+            raise ValueError("Metric alerts currently support Delta table semantic datasets")
+
+        source_table = db.query(DeltaTable).filter(DeltaTable.name == dataset.source_ref).one_or_none()
+        if source_table is None:
+            raise ValueError("Metric source Delta table not found")
+
+        expression = self.validate_metric_sql_fragment(metric.expression, "Metric expression")
+        metric_filter = self.validate_metric_sql_fragment(metric.filter_sql, "Metric filter") if metric.filter_sql else None
+        source_view = self._quote_identifier(slugify_identifier(dataset.source_ref))
+        metric_alias = self._quote_identifier("metric_value")
+        where_clause = f"WHERE ({metric_filter})" if metric_filter else ""
+        sql = f"""
+        SELECT {expression} AS {metric_alias}
+        FROM {source_view}
+        {where_clause}
+        LIMIT 1
+        """.strip()
+
+        result = self.duckdb_service.execute_query(
+            sql,
+            uploaded_files=db.query(UploadedFile).all(),
+            delta_tables=db.query(DeltaTable).all(),
+            limit=None,
+        )
+        rows = result.get("rows") or []
+        if not rows:
+            raise ValueError("Metric query returned no rows")
+        raw_value = rows[0].get("metric_value")
+        if raw_value is None:
+            raise ValueError("Metric query returned a null value")
+        try:
+            return float(raw_value), sql
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Metric query returned a non-numeric value") from exc
+
+    def _compare_metric_value(self, observed_value: float, comparison: str, threshold: float) -> bool:
+        if comparison == "gt":
+            return observed_value > threshold
+        if comparison == "gte":
+            return observed_value >= threshold
+        if comparison == "lt":
+            return observed_value < threshold
+        if comparison == "lte":
+            return observed_value <= threshold
+        if comparison == "eq":
+            return observed_value == threshold
+        if comparison == "neq":
+            return observed_value != threshold
+        raise ValueError("Unsupported alert comparison")
+
+    def _metric_alert_message(self, *, metric_label: str, observed_value: float, comparison: str, threshold: float, triggered: bool) -> str:
+        comparison_labels = {
+            "gt": ">",
+            "gte": ">=",
+            "lt": "<",
+            "lte": "<=",
+            "eq": "=",
+            "neq": "!=",
+        }
+        outcome = "Triggered" if triggered else "OK"
+        return f"{outcome}: {metric_label} is {observed_value:g}; rule is {comparison_labels.get(comparison, comparison)} {threshold:g}."
 
     def generate_chart_from_prompt(self, db: Session, *, prompt: str, dataset_id: str | None = None, limit: int = 12) -> dict:
         cleaned_prompt = " ".join(str(prompt or "").strip().split())

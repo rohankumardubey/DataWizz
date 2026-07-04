@@ -149,6 +149,13 @@ Pipeline payload shape:
 - `PUT /api/bi/metrics/{metric_id}`
 - `POST /api/bi/metrics/{metric_id}/preview`
 - `DELETE /api/bi/metrics/{metric_id}`
+- `GET /api/bi/alerts`
+- `POST /api/bi/alerts`
+- `PUT /api/bi/alerts/{alert_id}`
+- `DELETE /api/bi/alerts/{alert_id}`
+- `POST /api/bi/alerts/{alert_id}/evaluate`
+- `POST /api/bi/alerts/evaluate-all`
+- `GET /api/bi/alerts/events`
 - `GET /api/bi/charts`
 - `POST /api/bi/charts`
 - `POST /api/bi/charts/generate`
@@ -157,6 +164,22 @@ Pipeline payload shape:
 - `POST /api/bi/dashboards`
 - `GET /api/bi/dashboards/{dashboard_id}`
 - `POST /api/bi/report-schedules`
+
+Metric alert example:
+
+```json
+{
+  "name": "completed_revenue_alert",
+  "metric_id": "<semantic_metric_id>",
+  "comparison": "gt",
+  "threshold_value": 200000,
+  "severity": "critical",
+  "enabled": true,
+  "notification_channel": "local"
+}
+```
+
+Supported comparisons are `gt`, `gte`, `lt`, `lte`, `eq`, and `neq`. Alerts currently evaluate locally and retain event history in DataWizz; external delivery can be layered on later.
 
 ## Notes
 

@@ -60,7 +60,7 @@ storage/
 - `tables`: list and preview Delta tables
 - `pipelines`: save/load pipelines, validate graph, execute manually
 - `runs`: pipeline runs and logs
-- `bi`: datasets, semantic metrics, charts, dashboards, report schedules
+- `bi`: datasets, semantic metrics, metric alerts, charts, dashboards, report schedules
 - `system`: dashboard metrics, health, configuration snapshot
 
 ### Service Layer
@@ -134,6 +134,7 @@ The in-app BI module is intentionally lightweight in the MVP:
 
 - datasets map to Delta tables or saved SQL
 - semantic metrics store reusable aggregate expressions, optional filters, default dimensions, owner metadata, and certification status
+- metric alerts evaluate threshold rules over semantic metrics, update the latest alert state, and retain local event history
 - natural-language chart generation deterministically maps analyst prompts to semantic datasets, DuckDB SQL, chart type, and editable visualization config
 - charts persist configuration and rendering metadata
 - dashboards store widget layout and chart references

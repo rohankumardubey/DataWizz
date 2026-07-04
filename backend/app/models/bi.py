@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -33,6 +33,38 @@ class SemanticMetric(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     format: Mapped[str] = mapped_column(String(64), nullable=False, default="number")
     owner_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_certified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class MetricAlert(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "metric_alerts"
+
+    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    metric_id: Mapped[str] = mapped_column(ForeignKey("semantic_metrics.id", ondelete="CASCADE"), nullable=False)
+    comparison: Mapped[str] = mapped_column(String(16), nullable=False)
+    threshold_value: Mapped[float] = mapped_column(Float, nullable=False)
+    severity: Mapped[str] = mapped_column(String(32), nullable=False, default="warning")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    owner_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    notification_channel: Mapped[str] = mapped_column(String(64), nullable=False, default="local")
+    destination: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_status: Mapped[str] = mapped_column(String(32), nullable=False, default="not_evaluated")
+    last_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class MetricAlertEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "metric_alert_events"
+
+    alert_id: Mapped[str] = mapped_column(ForeignKey("metric_alerts.id", ondelete="CASCADE"), nullable=False)
+    metric_id: Mapped[str | None] = mapped_column(ForeignKey("semantic_metrics.id", ondelete="SET NULL"), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    triggered: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    observed_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    threshold_value: Mapped[float] = mapped_column(Float, nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    details_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class Chart(UUIDPrimaryKeyMixin, TimestampMixin, Base):
