@@ -550,6 +550,9 @@ export type MetricAlert = {
   last_value?: number | null
   last_message?: string | null
   last_evaluated_at?: string | null
+  schedule_cron?: string | null
+  schedule_enabled: boolean
+  schedule_updated_at?: string | null
   created_at: string
   updated_at: string
 }
@@ -561,6 +564,7 @@ export type MetricAlertEvent = {
   metric_id?: string | null
   metric_label?: string | null
   status: 'ok' | 'triggered' | 'error' | string
+  trigger_type: 'manual' | 'scheduled' | string
   triggered: boolean
   observed_value?: number | null
   threshold_value: number
@@ -581,6 +585,40 @@ export type MetricAlertSweep = {
   triggered: number
   errored: number
   events: MetricAlertEvent[]
+}
+
+export type MetricAlertSchedulerSweep = {
+  checked: number
+  evaluated: {
+    alert_id: string
+    alert_name: string
+    event_id: string
+    status: string
+    triggered: boolean
+  }[]
+  invalid_schedules: {
+    alert_id: string
+    alert_name: string
+    cron: string
+    reason: string
+  }[]
+  next_due: {
+    alert_id: string
+    alert_name: string
+    cron: string
+    next_run_at: string
+  }[]
+}
+
+export type MetricAlertSchedulerStatus = {
+  enabled: boolean
+  running: boolean
+  timezone: string
+  poll_interval_seconds: number
+  last_tick_at?: string | null
+  last_error?: string | null
+  managed_alert_count: number
+  last_summary: MetricAlertSchedulerSweep
 }
 
 export type Chart = {

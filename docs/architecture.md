@@ -87,6 +87,8 @@ Metadata lives in PostgreSQL and includes:
 - job_logs
 - semantic_datasets
 - semantic_metrics
+- metric_alerts
+- metric_alert_events
 - charts
 - dashboards
 - dashboard_widgets
@@ -134,7 +136,7 @@ The in-app BI module is intentionally lightweight in the MVP:
 
 - datasets map to Delta tables or saved SQL
 - semantic metrics store reusable aggregate expressions, optional filters, default dimensions, owner metadata, and certification status
-- metric alerts evaluate threshold rules over semantic metrics, update the latest alert state, and retain local event history
+- metric alerts evaluate threshold rules over semantic metrics, support cron-based local monitoring, update the latest alert state, and retain local event history
 - natural-language chart generation deterministically maps analyst prompts to semantic datasets, DuckDB SQL, chart type, and editable visualization config
 - charts persist configuration and rendering metadata
 - dashboards store widget layout and chart references

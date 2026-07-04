@@ -9,6 +9,7 @@ from app.db.base import *  # noqa: F403
 from app.db.runtime_schema import ensure_runtime_schema
 from app.db.session import Base, SessionLocal, engine
 from app.services.auth_service import auth_service
+from app.services.metric_alert_scheduler_service import metric_alert_scheduler_service
 from app.services.pipeline_scheduler_service import pipeline_scheduler_service
 from app.services.quality_scheduler_service import quality_scheduler_service
 from app.services.storage import StorageService
@@ -47,12 +48,14 @@ async def on_startup() -> None:
         db.close()
     await pipeline_scheduler_service.start()
     await quality_scheduler_service.start()
+    await metric_alert_scheduler_service.start()
 
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
     await pipeline_scheduler_service.stop()
     await quality_scheduler_service.stop()
+    await metric_alert_scheduler_service.stop()
 
 
 app.include_router(system.router, prefix=settings.api_prefix)

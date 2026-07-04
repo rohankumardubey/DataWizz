@@ -32,10 +32,16 @@ export function MetricAlertsPage() {
   const metricsQuery = useQuery({ queryKey: ['bi', 'metrics'], queryFn: api.listMetrics })
   const alertsQuery = useQuery({ queryKey: ['bi', 'metric-alerts'], queryFn: api.listMetricAlerts })
   const eventsQuery = useQuery({ queryKey: ['bi', 'metric-alert-events'], queryFn: () => api.listMetricAlertEvents({ limit: 75 }) })
+  const schedulerStatusQuery = useQuery({
+    queryKey: ['bi', 'metric-alert-scheduler-status'],
+    queryFn: api.getMetricAlertSchedulerStatus,
+    refetchInterval: 15000,
+  })
 
   const metrics = metricsQuery.data?.items ?? []
   const alerts = alertsQuery.data?.items ?? []
   const events = eventsQuery.data?.items ?? []
+  const schedulerStatus = schedulerStatusQuery.data
 
   const [selectedAlertId, setSelectedAlertId] = useState<string | null>(null)
   const [metricId, setMetricId] = useState('')
@@ -45,12 +51,15 @@ export function MetricAlertsPage() {
   const [severity, setSeverity] = useState<'info' | 'warning' | 'critical'>('warning')
   const [enabled, setEnabled] = useState(true)
   const [destination, setDestination] = useState('')
+  const [scheduleEnabled, setScheduleEnabled] = useState(false)
+  const [scheduleCron, setScheduleCron] = useState('*/15 * * * *')
   const [statusMessage, setStatusMessage] = useState('Create threshold rules on governed metrics, then run them locally against DuckDB.')
 
   const selectedMetric = useMemo(() => metrics.find((metric) => metric.id === metricId), [metricId, metrics])
   const triggeredCount = alerts.filter((alert) => alert.last_status === 'triggered').length
   const healthyCount = alerts.filter((alert) => alert.last_status === 'ok').length
   const enabledCount = alerts.filter((alert) => alert.enabled).length
+  const scheduledCount = alerts.filter((alert) => alert.schedule_enabled).length
 
   useEffect(() => {
     if (!metricId && metrics[0]) {
@@ -62,6 +71,7 @@ export function MetricAlertsPage() {
   const refreshAlertQueries = () => {
     queryClient.invalidateQueries({ queryKey: ['bi', 'metric-alerts'] })
     queryClient.invalidateQueries({ queryKey: ['bi', 'metric-alert-events'] })
+    queryClient.invalidateQueries({ queryKey: ['bi', 'metric-alert-scheduler-status'] })
   }
 
   const resetDraft = () => {
@@ -74,6 +84,8 @@ export function MetricAlertsPage() {
     setSeverity('warning')
     setEnabled(true)
     setDestination('')
+    setScheduleEnabled(false)
+    setScheduleCron('*/15 * * * *')
     setStatusMessage('Started a new metric alert draft.')
   }
 
@@ -86,6 +98,8 @@ export function MetricAlertsPage() {
     setSeverity(alert.severity as typeof severity)
     setEnabled(alert.enabled)
     setDestination(alert.destination ?? '')
+    setScheduleEnabled(alert.schedule_enabled)
+    setScheduleCron(alert.schedule_cron ?? '*/15 * * * *')
     setStatusMessage(`Editing alert ${alert.name}.`)
   }
 
@@ -102,6 +116,8 @@ export function MetricAlertsPage() {
         enabled,
         notification_channel: 'local',
         destination: destination || null,
+        schedule_enabled: scheduleEnabled,
+        schedule_cron: scheduleEnabled ? scheduleCron : null,
       }
       return selectedAlertId ? api.updateMetricAlert(selectedAlertId, payload) : api.createMetricAlert(payload)
     },
@@ -141,6 +157,15 @@ export function MetricAlertsPage() {
     onError: (error: Error) => setStatusMessage(error.message),
   })
 
+  const runDueSchedulesMutation = useMutation({
+    mutationFn: api.runDueMetricAlertSchedules,
+    onSuccess: (result) => {
+      refreshAlertQueries()
+      setStatusMessage(`Scheduler checked ${result.checked} alerts and evaluated ${result.evaluated.length} due rules.`)
+    },
+    onError: (error: Error) => setStatusMessage(error.message),
+  })
+
   const canSave = Boolean(metricId && name.trim() && thresholdValue.trim())
 
   return (
@@ -152,6 +177,9 @@ export function MetricAlertsPage() {
         actions={
           <>
             <Button tone="ghost" onClick={resetDraft}>New Alert</Button>
+            <Button tone="secondary" onClick={() => runDueSchedulesMutation.mutate()} disabled={runDueSchedulesMutation.isPending}>
+              Run Due Schedules
+            </Button>
             <Button onClick={() => evaluateAllMutation.mutate()} disabled={!enabledCount || evaluateAllMutation.isPending}>
               Run Enabled Alerts
             </Button>
@@ -159,11 +187,16 @@ export function MetricAlertsPage() {
         }
       />
 
-      <section className="grid gap-4 lg:grid-cols-4">
+      <section className="grid gap-4 lg:grid-cols-5">
         <Panel>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Alerts</p>
           <p className="mt-2 font-display text-3xl text-slate-950">{alerts.length}</p>
           <p className="mt-2 text-sm text-slate-600">{enabledCount} enabled rules.</p>
+        </Panel>
+        <Panel>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Scheduled</p>
+          <p className="mt-2 font-display text-3xl text-slate-950">{scheduledCount}</p>
+          <p className="mt-2 text-sm text-slate-600">Managed by the local scheduler.</p>
         </Panel>
         <Panel>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Triggered</p>
@@ -180,6 +213,50 @@ export function MetricAlertsPage() {
           <p className="mt-2 text-sm leading-6 text-lagoon">{statusMessage}</p>
         </Panel>
       </section>
+
+      <Panel>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate/55">Scheduler</p>
+            <h2 className="mt-2 font-display text-2xl text-ink">Metric alert scheduler</h2>
+            <p className="mt-2 text-sm leading-6 text-slate/70">
+              Uses the same local scheduler loop as pipelines and quality checks. Due alerts are evaluated in the background when the backend is running.
+            </p>
+          </div>
+          <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-3 lg:min-w-[520px]">
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Runtime</p>
+              <p className="mt-2 font-semibold text-slate-950">
+                {schedulerStatus?.enabled ? (schedulerStatus.running ? 'Running' : 'Enabled') : 'Disabled'}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Managed</p>
+              <p className="mt-2 font-semibold text-slate-950">{schedulerStatus?.managed_alert_count ?? scheduledCount} alerts</p>
+            </div>
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Last Tick</p>
+              <p className="mt-2 font-semibold text-slate-950">
+                {schedulerStatus?.last_tick_at ? formatDate(schedulerStatus.last_tick_at) : 'Not yet'}
+              </p>
+            </div>
+          </div>
+        </div>
+        {schedulerStatus?.last_summary.next_due?.length ? (
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {schedulerStatus.last_summary.next_due.slice(0, 4).map((item) => (
+              <div key={item.alert_id} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4 text-sm">
+                <p className="font-semibold text-slate-950">{item.alert_name}</p>
+                <p className="mt-1 font-mono text-xs text-slate-500">{item.cron}</p>
+                <p className="mt-2 text-slate-600">Next due: {formatDate(item.next_run_at)}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {schedulerStatus?.last_error ? (
+          <p className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm text-amber-800">{schedulerStatus.last_error}</p>
+        ) : null}
+      </Panel>
 
       <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
         <Panel>
@@ -211,7 +288,7 @@ export function MetricAlertsPage() {
                     {comparisonLabels[alert.comparison] ?? alert.comparison} {alert.threshold_value}
                   </p>
                   <p className="mt-3 text-xs text-slate-500">
-                    {alert.enabled ? 'Enabled' : 'Paused'} • {alert.last_evaluated_at ? formatDate(alert.last_evaluated_at) : 'Never evaluated'}
+                    {alert.enabled ? 'Enabled' : 'Paused'} • {alert.schedule_enabled ? `Scheduled ${alert.schedule_cron}` : 'Manual'} • {alert.last_evaluated_at ? formatDate(alert.last_evaluated_at) : 'Never evaluated'}
                   </p>
                 </button>
               ))
@@ -313,6 +390,20 @@ export function MetricAlertsPage() {
                   </div>
                 </div>
 
+                <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
+                  <label className="mt-6 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+                    <input type="checkbox" checked={scheduleEnabled} onChange={(event) => setScheduleEnabled(event.target.checked)} />
+                    Scheduled monitoring
+                  </label>
+                  <div>
+                    <Label>Cron Schedule</Label>
+                    <Input value={scheduleCron} onChange={(event) => setScheduleCron(event.target.value)} placeholder="*/15 * * * *" className="font-mono" />
+                    <p className="mt-2 text-xs text-slate-500">
+                      Uses {schedulerStatus?.timezone ?? 'the backend scheduler timezone'}; examples: <code>*/15 * * * *</code>, <code>0 9 * * 1-5</code>.
+                    </p>
+                  </div>
+                </div>
+
                 <div className="flex flex-wrap gap-3">
                   <Button onClick={() => saveAlertMutation.mutate()} disabled={!canSave || saveAlertMutation.isPending}>
                     {selectedAlertId ? 'Update Alert' : 'Create Alert'}
@@ -353,6 +444,9 @@ export function MetricAlertsPage() {
                           </span>
                           <span className="rounded-full bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-lagoon">
                             {event.triggered ? 'Action needed' : 'Observed'}
+                          </span>
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                            {event.trigger_type}
                           </span>
                         </div>
                         <p className="mt-3 font-semibold text-slate-950">{event.alert_name ?? 'Metric alert'}</p>

@@ -156,6 +156,8 @@ Pipeline payload shape:
 - `POST /api/bi/alerts/{alert_id}/evaluate`
 - `POST /api/bi/alerts/evaluate-all`
 - `GET /api/bi/alerts/events`
+- `GET /api/bi/alerts/scheduler/status`
+- `POST /api/bi/alerts/scheduler/run-due`
 - `GET /api/bi/charts`
 - `POST /api/bi/charts`
 - `POST /api/bi/charts/generate`
@@ -175,11 +177,13 @@ Metric alert example:
   "threshold_value": 200000,
   "severity": "critical",
   "enabled": true,
-  "notification_channel": "local"
+  "notification_channel": "local",
+  "schedule_enabled": true,
+  "schedule_cron": "*/15 * * * *"
 }
 ```
 
-Supported comparisons are `gt`, `gte`, `lt`, `lte`, `eq`, and `neq`. Alerts currently evaluate locally and retain event history in DataWizz; external delivery can be layered on later.
+Supported comparisons are `gt`, `gte`, `lt`, `lte`, `eq`, and `neq`. Alerts evaluate locally, can be checked manually or by the backend cron scheduler, and retain event history in DataWizz; external delivery can be layered on later.
 
 ## Notes
 
