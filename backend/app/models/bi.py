@@ -51,6 +51,9 @@ class MetricAlert(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     last_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     last_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    schedule_cron: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    schedule_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    schedule_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class MetricAlertEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -59,6 +62,7 @@ class MetricAlertEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     alert_id: Mapped[str] = mapped_column(ForeignKey("metric_alerts.id", ondelete="CASCADE"), nullable=False)
     metric_id: Mapped[str | None] = mapped_column(ForeignKey("semantic_metrics.id", ondelete="SET NULL"), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
+    trigger_type: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
     triggered: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     observed_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     threshold_value: Mapped[float] = mapped_column(Float, nullable=False)

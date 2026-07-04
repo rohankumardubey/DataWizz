@@ -126,6 +126,8 @@ class MetricAlertCreateRequest(BaseModel):
     enabled: bool = True
     notification_channel: str = Field(default="local", pattern="^local$")
     destination: str | None = None
+    schedule_cron: str | None = None
+    schedule_enabled: bool = False
 
 
 class MetricAlertUpdateRequest(BaseModel):
@@ -137,6 +139,8 @@ class MetricAlertUpdateRequest(BaseModel):
     enabled: bool = True
     notification_channel: str = Field(default="local", pattern="^local$")
     destination: str | None = None
+    schedule_cron: str | None = None
+    schedule_enabled: bool = False
 
 
 class MetricAlertRead(TimestampedModel):
@@ -157,6 +161,9 @@ class MetricAlertRead(TimestampedModel):
     last_value: float | None = None
     last_message: str | None = None
     last_evaluated_at: datetime | None = None
+    schedule_cron: str | None = None
+    schedule_enabled: bool
+    schedule_updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -167,6 +174,7 @@ class MetricAlertEventRead(TimestampedModel):
     metric_id: str | None = None
     metric_label: str | None = None
     status: str
+    trigger_type: str
     triggered: bool
     observed_value: float | None = None
     threshold_value: float
@@ -195,6 +203,46 @@ class MetricAlertSweepResponse(BaseModel):
     triggered: int
     errored: int
     events: list[MetricAlertEventRead]
+
+
+class MetricAlertSchedulerEvaluationRead(BaseModel):
+    alert_id: str
+    alert_name: str
+    event_id: str
+    status: str
+    triggered: bool
+
+
+class MetricAlertSchedulerInvalidScheduleRead(BaseModel):
+    alert_id: str
+    alert_name: str
+    cron: str
+    reason: str
+
+
+class MetricAlertSchedulerNextDueRead(BaseModel):
+    alert_id: str
+    alert_name: str
+    cron: str
+    next_run_at: str
+
+
+class MetricAlertSchedulerSweepResponse(BaseModel):
+    checked: int
+    evaluated: list[MetricAlertSchedulerEvaluationRead] = Field(default_factory=list)
+    invalid_schedules: list[MetricAlertSchedulerInvalidScheduleRead] = Field(default_factory=list)
+    next_due: list[MetricAlertSchedulerNextDueRead] = Field(default_factory=list)
+
+
+class MetricAlertSchedulerStatusResponse(BaseModel):
+    enabled: bool
+    running: bool
+    timezone: str
+    poll_interval_seconds: int
+    last_tick_at: str | None = None
+    last_error: str | None = None
+    managed_alert_count: int
+    last_summary: MetricAlertSchedulerSweepResponse
 
 
 class ChartCreateRequest(BaseModel):

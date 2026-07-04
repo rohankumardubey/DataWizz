@@ -76,11 +76,23 @@ def ensure_runtime_schema(db_engine: Engine) -> None:
                         last_value FLOAT,
                         last_message TEXT,
                         last_evaluated_at DATETIME,
+                        schedule_cron VARCHAR(128),
+                        schedule_enabled BOOLEAN NOT NULL DEFAULT 0,
+                        schedule_updated_at DATETIME,
                         FOREIGN KEY(metric_id) REFERENCES semantic_metrics(id) ON DELETE CASCADE
                     )
                     """
                 )
             )
+    else:
+        metric_alert_columns = {column["name"] for column in inspector.get_columns("metric_alerts")}
+        with db_engine.begin() as connection:
+            if "schedule_cron" not in metric_alert_columns:
+                connection.execute(text("ALTER TABLE metric_alerts ADD COLUMN schedule_cron VARCHAR(128)"))
+            if "schedule_enabled" not in metric_alert_columns:
+                connection.execute(text("ALTER TABLE metric_alerts ADD COLUMN schedule_enabled BOOLEAN NOT NULL DEFAULT 0"))
+            if "schedule_updated_at" not in metric_alert_columns:
+                connection.execute(text("ALTER TABLE metric_alerts ADD COLUMN schedule_updated_at DATETIME"))
 
     if "metric_alert_events" not in table_names:
         with db_engine.begin() as connection:
@@ -94,6 +106,7 @@ def ensure_runtime_schema(db_engine: Engine) -> None:
                         alert_id VARCHAR NOT NULL,
                         metric_id VARCHAR,
                         status VARCHAR(32) NOT NULL,
+                        trigger_type VARCHAR(32) NOT NULL DEFAULT 'manual',
                         triggered BOOLEAN NOT NULL DEFAULT 0,
                         observed_value FLOAT,
                         threshold_value FLOAT NOT NULL,
@@ -106,6 +119,11 @@ def ensure_runtime_schema(db_engine: Engine) -> None:
                     """
                 )
             )
+    else:
+        metric_alert_event_columns = {column["name"] for column in inspector.get_columns("metric_alert_events")}
+        if "trigger_type" not in metric_alert_event_columns:
+            with db_engine.begin() as connection:
+                connection.execute(text("ALTER TABLE metric_alert_events ADD COLUMN trigger_type VARCHAR(32) NOT NULL DEFAULT 'manual'"))
 
     if "quality_runs" in table_names:
         quality_run_columns = {column["name"] for column in inspector.get_columns("quality_runs")}

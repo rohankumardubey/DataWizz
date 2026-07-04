@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -33,6 +34,8 @@ from app.schemas.bi import (
     MetricAlertEvaluationResponse,
     MetricAlertEventListResponse,
     MetricAlertListResponse,
+    MetricAlertSchedulerStatusResponse,
+    MetricAlertSchedulerSweepResponse,
     MetricAlertRead,
     MetricAlertSweepResponse,
     MetricAlertUpdateRequest,
@@ -54,6 +57,7 @@ from app.schemas.bi import (
     SemanticMetricUpdateRequest,
 )
 from app.services.bi_service import BiService
+from app.services.metric_alert_scheduler_service import metric_alert_scheduler_service
 from app.services.superset_catalog_service import superset_catalog_service
 
 
@@ -236,12 +240,19 @@ def create_alert(
     metric = db.query(SemanticMetric).filter(SemanticMetric.id == payload.metric_id).one_or_none()
     if metric is None:
         raise HTTPException(status_code=404, detail="Metric not found")
+    try:
+        schedule_cron, schedule_enabled = bi_service.normalize_alert_schedule(payload.schedule_cron, payload.schedule_enabled)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     record = MetricAlert(
         **{
             **payload.model_dump(),
             "name": bi_service.resolve_alert_name(db, payload.name),
             "owner_email": current_user.email,
             "last_status": "not_evaluated",
+            "schedule_cron": schedule_cron,
+            "schedule_enabled": schedule_enabled,
+            "schedule_updated_at": datetime.now(timezone.utc) if schedule_cron else None,
         }
     )
     db.add(record)
@@ -262,9 +273,17 @@ def update_alert(alert_id: str, payload: MetricAlertUpdateRequest, db: Session =
     metric = db.query(SemanticMetric).filter(SemanticMetric.id == payload.metric_id).one_or_none()
     if metric is None:
         raise HTTPException(status_code=404, detail="Metric not found")
+    try:
+        schedule_cron, schedule_enabled = bi_service.normalize_alert_schedule(payload.schedule_cron, payload.schedule_enabled)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     data = payload.model_dump()
     data["name"] = bi_service.resolve_alert_name(db, payload.name, exclude_id=alert_id)
+    data["schedule_cron"] = schedule_cron
+    data["schedule_enabled"] = schedule_enabled
+    if schedule_cron != record.schedule_cron or schedule_enabled != record.schedule_enabled:
+        data["schedule_updated_at"] = datetime.now(timezone.utc) if schedule_cron else None
     for key, value in data.items():
         setattr(record, key, value)
     try:
@@ -284,6 +303,16 @@ def delete_alert(alert_id: str, db: Session = Depends(get_db)) -> ApiMessage:
     db.delete(record)
     db.commit()
     return ApiMessage(message="Alert deleted successfully")
+
+
+@router.get("/alerts/scheduler/status", response_model=MetricAlertSchedulerStatusResponse)
+def get_alert_scheduler_status() -> MetricAlertSchedulerStatusResponse:
+    return MetricAlertSchedulerStatusResponse.model_validate(metric_alert_scheduler_service.get_status())
+
+
+@router.post("/alerts/scheduler/run-due", response_model=MetricAlertSchedulerSweepResponse, dependencies=[Depends(require_roles("admin", "analyst"))])
+def run_due_alert_schedules() -> MetricAlertSchedulerSweepResponse:
+    return MetricAlertSchedulerSweepResponse.model_validate(metric_alert_scheduler_service.run_due_once())
 
 
 @router.post("/alerts/{alert_id}/evaluate", response_model=MetricAlertEvaluationResponse, dependencies=[Depends(require_roles("admin", "analyst"))])

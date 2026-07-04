@@ -7,6 +7,7 @@ from html import escape
 from pathlib import Path
 
 import pyarrow.csv as pacsv
+from croniter import croniter
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -202,6 +203,9 @@ class BiService:
             "last_value": alert.last_value,
             "last_message": alert.last_message,
             "last_evaluated_at": alert.last_evaluated_at,
+            "schedule_cron": alert.schedule_cron,
+            "schedule_enabled": alert.schedule_enabled,
+            "schedule_updated_at": alert.schedule_updated_at,
         }
 
     def serialize_alert_event(self, db: Session, event: MetricAlertEvent) -> dict:
@@ -216,6 +220,7 @@ class BiService:
             "metric_id": event.metric_id,
             "metric_label": metric.label if metric else None,
             "status": event.status,
+            "trigger_type": event.trigger_type,
             "triggered": event.triggered,
             "observed_value": event.observed_value,
             "threshold_value": event.threshold_value,
@@ -235,7 +240,7 @@ class BiService:
         events = query.order_by(MetricAlertEvent.created_at.desc()).limit(max(1, min(limit, 200))).all()
         return [self.serialize_alert_event(db, event) for event in events]
 
-    def evaluate_metric_alert(self, db: Session, alert: MetricAlert) -> MetricAlertEvent:
+    def evaluate_metric_alert(self, db: Session, alert: MetricAlert, *, trigger_type: str = "manual") -> MetricAlertEvent:
         evaluated_at = datetime.now(timezone.utc)
         metric = db.query(SemanticMetric).filter(SemanticMetric.id == alert.metric_id).one_or_none()
         status = "error"
@@ -266,6 +271,7 @@ class BiService:
             alert_id=alert.id,
             metric_id=metric.id if metric else alert.metric_id,
             status=status,
+            trigger_type=trigger_type,
             triggered=triggered,
             observed_value=observed_value,
             threshold_value=alert.threshold_value,
@@ -284,6 +290,14 @@ class BiService:
     def evaluate_enabled_metric_alerts(self, db: Session) -> list[MetricAlertEvent]:
         alerts = db.query(MetricAlert).filter(MetricAlert.enabled.is_(True)).order_by(MetricAlert.updated_at.desc()).all()
         return [self.evaluate_metric_alert(db, alert) for alert in alerts]
+
+    def normalize_alert_schedule(self, schedule_cron: str | None, schedule_enabled: bool) -> tuple[str | None, bool]:
+        cron = str(schedule_cron or "").strip()
+        if not cron:
+            return None, False
+        if not croniter.is_valid(cron):
+            raise ValueError("Alert schedule must be a valid cron expression")
+        return cron, bool(schedule_enabled)
 
     def evaluate_metric_value(self, db: Session, metric: SemanticMetric) -> tuple[float, str]:
         dataset = db.query(SemanticDataset).filter(SemanticDataset.id == metric.dataset_id).one_or_none()
