@@ -124,7 +124,7 @@ class MetricAlertCreateRequest(BaseModel):
     threshold_value: float
     severity: str = Field(default="warning", pattern="^(info|warning|critical)$")
     enabled: bool = True
-    notification_channel: str = Field(default="local", pattern="^local$")
+    notification_channel: str = Field(default="local", pattern="^(local|webhook)$")
     destination: str | None = None
     schedule_cron: str | None = None
     schedule_enabled: bool = False
@@ -137,7 +137,7 @@ class MetricAlertUpdateRequest(BaseModel):
     threshold_value: float
     severity: str = Field(default="warning", pattern="^(info|warning|critical)$")
     enabled: bool = True
-    notification_channel: str = Field(default="local", pattern="^local$")
+    notification_channel: str = Field(default="local", pattern="^(local|webhook)$")
     destination: str | None = None
     schedule_cron: str | None = None
     schedule_enabled: bool = False
@@ -181,6 +181,11 @@ class MetricAlertEventRead(TimestampedModel):
     message: str
     evaluated_at: datetime
     details_json: dict | None = None
+    delivery_status: str
+    delivery_channel: str | None = None
+    delivery_attempted_at: datetime | None = None
+    delivery_response_code: int | None = None
+    delivery_error: str | None = None
 
     model_config = {"from_attributes": True}
 

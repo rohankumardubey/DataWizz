@@ -113,6 +113,11 @@ def ensure_runtime_schema(db_engine: Engine) -> None:
                         message TEXT NOT NULL,
                         evaluated_at DATETIME NOT NULL,
                         details_json JSON,
+                        delivery_status VARCHAR(32) NOT NULL DEFAULT 'not_attempted',
+                        delivery_channel VARCHAR(64),
+                        delivery_attempted_at DATETIME,
+                        delivery_response_code INTEGER,
+                        delivery_error TEXT,
                         FOREIGN KEY(alert_id) REFERENCES metric_alerts(id) ON DELETE CASCADE,
                         FOREIGN KEY(metric_id) REFERENCES semantic_metrics(id) ON DELETE SET NULL
                     )
@@ -124,6 +129,17 @@ def ensure_runtime_schema(db_engine: Engine) -> None:
         if "trigger_type" not in metric_alert_event_columns:
             with db_engine.begin() as connection:
                 connection.execute(text("ALTER TABLE metric_alert_events ADD COLUMN trigger_type VARCHAR(32) NOT NULL DEFAULT 'manual'"))
+        with db_engine.begin() as connection:
+            if "delivery_status" not in metric_alert_event_columns:
+                connection.execute(text("ALTER TABLE metric_alert_events ADD COLUMN delivery_status VARCHAR(32) NOT NULL DEFAULT 'not_attempted'"))
+            if "delivery_channel" not in metric_alert_event_columns:
+                connection.execute(text("ALTER TABLE metric_alert_events ADD COLUMN delivery_channel VARCHAR(64)"))
+            if "delivery_attempted_at" not in metric_alert_event_columns:
+                connection.execute(text("ALTER TABLE metric_alert_events ADD COLUMN delivery_attempted_at DATETIME"))
+            if "delivery_response_code" not in metric_alert_event_columns:
+                connection.execute(text("ALTER TABLE metric_alert_events ADD COLUMN delivery_response_code INTEGER"))
+            if "delivery_error" not in metric_alert_event_columns:
+                connection.execute(text("ALTER TABLE metric_alert_events ADD COLUMN delivery_error TEXT"))
 
     if "quality_runs" in table_names:
         quality_run_columns = {column["name"] for column in inspector.get_columns("quality_runs")}

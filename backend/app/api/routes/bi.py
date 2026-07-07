@@ -242,6 +242,7 @@ def create_alert(
         raise HTTPException(status_code=404, detail="Metric not found")
     try:
         schedule_cron, schedule_enabled = bi_service.normalize_alert_schedule(payload.schedule_cron, payload.schedule_enabled)
+        notification_channel, destination = bi_service.normalize_alert_delivery(payload.notification_channel, payload.destination)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     record = MetricAlert(
@@ -249,6 +250,8 @@ def create_alert(
             **payload.model_dump(),
             "name": bi_service.resolve_alert_name(db, payload.name),
             "owner_email": current_user.email,
+            "notification_channel": notification_channel,
+            "destination": destination,
             "last_status": "not_evaluated",
             "schedule_cron": schedule_cron,
             "schedule_enabled": schedule_enabled,
@@ -275,11 +278,14 @@ def update_alert(alert_id: str, payload: MetricAlertUpdateRequest, db: Session =
         raise HTTPException(status_code=404, detail="Metric not found")
     try:
         schedule_cron, schedule_enabled = bi_service.normalize_alert_schedule(payload.schedule_cron, payload.schedule_enabled)
+        notification_channel, destination = bi_service.normalize_alert_delivery(payload.notification_channel, payload.destination)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     data = payload.model_dump()
     data["name"] = bi_service.resolve_alert_name(db, payload.name, exclude_id=alert_id)
+    data["notification_channel"] = notification_channel
+    data["destination"] = destination
     data["schedule_cron"] = schedule_cron
     data["schedule_enabled"] = schedule_enabled
     if schedule_cron != record.schedule_cron or schedule_enabled != record.schedule_enabled:

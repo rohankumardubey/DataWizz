@@ -544,7 +544,7 @@ export type MetricAlert = {
   severity: 'info' | 'warning' | 'critical'
   enabled: boolean
   owner_email?: string | null
-  notification_channel: 'local' | string
+  notification_channel: 'local' | 'webhook' | string
   destination?: string | null
   last_status: 'not_evaluated' | 'ok' | 'triggered' | 'error' | string
   last_value?: number | null
@@ -571,6 +571,11 @@ export type MetricAlertEvent = {
   message: string
   evaluated_at: string
   details_json?: Record<string, unknown> | null
+  delivery_status: 'not_attempted' | 'skipped' | 'delivered' | 'failed' | string
+  delivery_channel?: 'local' | 'webhook' | string | null
+  delivery_attempted_at?: string | null
+  delivery_response_code?: number | null
+  delivery_error?: string | null
   created_at: string
   updated_at: string
 }

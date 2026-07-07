@@ -1,10 +1,13 @@
 import json
 import re
+import urllib.error
+import urllib.request
 import zipfile
 from datetime import datetime, timezone
 from io import BytesIO
 from html import escape
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pyarrow.csv as pacsv
 from croniter import croniter
@@ -227,6 +230,11 @@ class BiService:
             "message": event.message,
             "evaluated_at": event.evaluated_at,
             "details_json": event.details_json,
+            "delivery_status": event.delivery_status,
+            "delivery_channel": event.delivery_channel,
+            "delivery_attempted_at": event.delivery_attempted_at,
+            "delivery_response_code": event.delivery_response_code,
+            "delivery_error": event.delivery_error,
         }
 
     def list_alerts(self, db: Session) -> list[dict]:
@@ -285,6 +293,8 @@ class BiService:
         alert.last_value = observed_value
         alert.last_message = message
         alert.last_evaluated_at = evaluated_at
+        db.flush()
+        self.deliver_metric_alert_event(db, alert, event, metric)
         return event
 
     def evaluate_enabled_metric_alerts(self, db: Session) -> list[MetricAlertEvent]:
@@ -298,6 +308,112 @@ class BiService:
         if not croniter.is_valid(cron):
             raise ValueError("Alert schedule must be a valid cron expression")
         return cron, bool(schedule_enabled)
+
+    def normalize_alert_delivery(self, notification_channel: str | None, destination: str | None) -> tuple[str, str | None]:
+        channel = str(notification_channel or "local").strip().lower()
+        if channel not in {"local", "webhook"}:
+            raise ValueError("Alert delivery channel must be local or webhook")
+
+        cleaned_destination = str(destination or "").strip() or None
+        if channel == "webhook":
+            if cleaned_destination is None:
+                raise ValueError("Webhook alerts require a destination URL")
+            parsed = urlparse(cleaned_destination)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise ValueError("Webhook destination must be an http:// or https:// URL")
+        return channel, cleaned_destination
+
+    def deliver_metric_alert_event(self, db: Session, alert: MetricAlert, event: MetricAlertEvent, metric: SemanticMetric | None) -> None:
+        channel = (alert.notification_channel or "local").strip().lower()
+        event.delivery_channel = channel
+        if not event.triggered:
+            event.delivery_status = "skipped"
+            event.delivery_error = "Alert did not trigger."
+            return
+
+        if channel == "local":
+            event.delivery_status = "delivered"
+            event.delivery_attempted_at = datetime.now(timezone.utc)
+            event.delivery_error = None
+            event.delivery_response_code = None
+            return
+
+        if channel != "webhook":
+            event.delivery_status = "failed"
+            event.delivery_attempted_at = datetime.now(timezone.utc)
+            event.delivery_error = f"Unsupported delivery channel: {channel}"
+            return
+
+        destination = str(alert.destination or "").strip()
+        if not destination:
+            event.delivery_status = "failed"
+            event.delivery_attempted_at = datetime.now(timezone.utc)
+            event.delivery_error = "Webhook destination is empty."
+            return
+
+        payload = self._build_metric_alert_delivery_payload(db, alert, event, metric)
+        event.delivery_attempted_at = datetime.now(timezone.utc)
+        try:
+            response_code = self._post_metric_alert_webhook(destination, payload)
+            event.delivery_response_code = response_code
+            event.delivery_status = "delivered" if 200 <= response_code < 300 else "failed"
+            event.delivery_error = None if event.delivery_status == "delivered" else f"Webhook returned HTTP {response_code}."
+        except urllib.error.HTTPError as exc:
+            event.delivery_response_code = exc.code
+            event.delivery_status = "failed"
+            event.delivery_error = f"Webhook returned HTTP {exc.code}."
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            event.delivery_status = "failed"
+            event.delivery_error = str(exc)
+
+    def _build_metric_alert_delivery_payload(
+        self,
+        db: Session,
+        alert: MetricAlert,
+        event: MetricAlertEvent,
+        metric: SemanticMetric | None,
+    ) -> dict:
+        dataset = db.query(SemanticDataset).filter(SemanticDataset.id == metric.dataset_id).one_or_none() if metric else None
+        return {
+            "type": "datawizz.metric_alert.triggered",
+            "alert": {
+                "id": alert.id,
+                "name": alert.name,
+                "severity": alert.severity,
+                "comparison": alert.comparison,
+                "threshold_value": alert.threshold_value,
+            },
+            "metric": {
+                "id": metric.id if metric else event.metric_id,
+                "name": metric.name if metric else None,
+                "label": metric.label if metric else None,
+                "dataset_name": dataset.name if dataset else None,
+                "source_ref": dataset.source_ref if dataset else None,
+            },
+            "event": {
+                "id": event.id,
+                "status": event.status,
+                "trigger_type": event.trigger_type,
+                "triggered": event.triggered,
+                "observed_value": event.observed_value,
+                "message": event.message,
+                "evaluated_at": event.evaluated_at.isoformat(),
+            },
+        }
+
+    def _post_metric_alert_webhook(self, destination: str, payload: dict) -> int:
+        body = json.dumps(payload).encode("utf-8")
+        request = urllib.request.Request(
+            destination,
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "DataWizz-MetricAlerts/1.0",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=3) as response:  # noqa: S310 - user-configured local integration URL.
+            return int(response.status)
 
     def evaluate_metric_value(self, db: Session, metric: SemanticMetric) -> tuple[float, str]:
         dataset = db.query(SemanticDataset).filter(SemanticDataset.id == metric.dataset_id).one_or_none()

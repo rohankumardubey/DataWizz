@@ -177,13 +177,19 @@ Metric alert example:
   "threshold_value": 200000,
   "severity": "critical",
   "enabled": true,
-  "notification_channel": "local",
+  "notification_channel": "webhook",
+  "destination": "http://localhost:9009/datawizz-alerts",
   "schedule_enabled": true,
   "schedule_cron": "*/15 * * * *"
 }
 ```
 
-Supported comparisons are `gt`, `gte`, `lt`, `lte`, `eq`, and `neq`. Alerts evaluate locally, can be checked manually or by the backend cron scheduler, and retain event history in DataWizz; external delivery can be layered on later.
+Supported comparisons are `gt`, `gte`, `lt`, `lte`, `eq`, and `neq`. Alerts evaluate locally, can be checked manually or by the backend cron scheduler, and retain event history in DataWizz.
+
+Supported delivery channels:
+
+- `local`: records delivery as handled in the DataWizz event log.
+- `webhook`: sends triggered alerts as JSON with `POST` to the configured `destination` URL. Delivery failures are captured on the alert event and do not fail metric evaluation.
 
 ## Notes
 

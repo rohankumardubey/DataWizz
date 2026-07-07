@@ -136,7 +136,7 @@ The in-app BI module is intentionally lightweight in the MVP:
 
 - datasets map to Delta tables or saved SQL
 - semantic metrics store reusable aggregate expressions, optional filters, default dimensions, owner metadata, and certification status
-- metric alerts evaluate threshold rules over semantic metrics, support cron-based local monitoring, update the latest alert state, and retain local event history
+- metric alerts evaluate threshold rules over semantic metrics, support cron-based local monitoring, update the latest alert state, retain local event history, and can deliver triggered events to webhooks
 - natural-language chart generation deterministically maps analyst prompts to semantic datasets, DuckDB SQL, chart type, and editable visualization config
 - charts persist configuration and rendering metadata
 - dashboards store widget layout and chart references
