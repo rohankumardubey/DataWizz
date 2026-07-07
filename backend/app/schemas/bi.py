@@ -210,6 +210,20 @@ class MetricAlertSweepResponse(BaseModel):
     events: list[MetricAlertEventRead]
 
 
+class MetricAlertDeliveryTestRequest(BaseModel):
+    notification_channel: str = Field(default="local", pattern="^(local|webhook)$")
+    destination: str | None = None
+
+
+class MetricAlertDeliveryTestResponse(BaseModel):
+    delivery_status: str
+    delivery_channel: str
+    destination: str | None = None
+    delivery_response_code: int | None = None
+    delivery_error: str | None = None
+    message: str
+
+
 class MetricAlertSchedulerEvaluationRead(BaseModel):
     alert_id: str
     alert_name: str
