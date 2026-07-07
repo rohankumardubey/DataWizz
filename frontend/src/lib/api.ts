@@ -19,6 +19,7 @@ import type {
   GlobalSearchResult,
   JobLog,
   MetricAlert,
+  MetricAlertDeliveryTest,
   MetricAlertEvaluation,
   MetricAlertEvent,
   MetricAlertSchedulerStatus,
@@ -313,6 +314,8 @@ export const api = {
     request<MetricAlertSweep>('/bi/alerts/evaluate-all', { method: 'POST' }),
   listMetricAlertEvents: (filters: { alert_id?: string; limit?: number } = {}) =>
     request<ListResponse<MetricAlertEvent>>(`/bi/alerts/events${queryString(filters)}`),
+  testMetricAlertDelivery: (payload: { notification_channel: 'local' | 'webhook'; destination?: string | null }) =>
+    request<MetricAlertDeliveryTest>('/bi/alerts/test-delivery', { method: 'POST', body: json(payload) }),
   getMetricAlertSchedulerStatus: () => request<MetricAlertSchedulerStatus>('/bi/alerts/scheduler/status'),
   runDueMetricAlertSchedules: () =>
     request<MetricAlertSchedulerSweep>('/bi/alerts/scheduler/run-due', { method: 'POST' }),

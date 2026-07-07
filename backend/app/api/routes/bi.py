@@ -31,6 +31,8 @@ from app.schemas.bi import (
     DatasetPreviewResponse,
     DatasetExplorerResponse,
     MetricAlertCreateRequest,
+    MetricAlertDeliveryTestRequest,
+    MetricAlertDeliveryTestResponse,
     MetricAlertEvaluationResponse,
     MetricAlertEventListResponse,
     MetricAlertListResponse,
@@ -319,6 +321,15 @@ def get_alert_scheduler_status() -> MetricAlertSchedulerStatusResponse:
 @router.post("/alerts/scheduler/run-due", response_model=MetricAlertSchedulerSweepResponse, dependencies=[Depends(require_roles("admin", "analyst"))])
 def run_due_alert_schedules() -> MetricAlertSchedulerSweepResponse:
     return MetricAlertSchedulerSweepResponse.model_validate(metric_alert_scheduler_service.run_due_once())
+
+
+@router.post("/alerts/test-delivery", response_model=MetricAlertDeliveryTestResponse, dependencies=[Depends(require_roles("admin", "analyst"))])
+def test_alert_delivery(payload: MetricAlertDeliveryTestRequest) -> MetricAlertDeliveryTestResponse:
+    try:
+        result = bi_service.test_metric_alert_delivery(payload.notification_channel, payload.destination)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return MetricAlertDeliveryTestResponse.model_validate(result)
 
 
 @router.post("/alerts/{alert_id}/evaluate", response_model=MetricAlertEvaluationResponse, dependencies=[Depends(require_roles("admin", "analyst"))])

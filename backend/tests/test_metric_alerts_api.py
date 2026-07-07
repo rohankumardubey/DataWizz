@@ -248,6 +248,35 @@ def test_triggered_metric_alert_delivers_webhook_payload() -> None:
             assert received_payloads[0]["type"] == "datawizz.metric_alert.triggered"
             assert received_payloads[0]["alert"]["name"] == "webhook_revenue_alert"
             assert received_payloads[0]["metric"]["label"] == "Webhook Revenue"
+
+            delivery_test = client.post(
+                "/api/bi/alerts/test-delivery",
+                headers=headers,
+                json={"notification_channel": "webhook", "destination": webhook_url},
+            )
+            assert delivery_test.status_code == 200
+            assert delivery_test.json()["delivery_status"] == "delivered"
+            assert delivery_test.json()["delivery_response_code"] == 202
+            assert received_payloads[-1]["type"] == "datawizz.metric_alert.delivery_test"
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_webhook_delivery_test_reports_connection_refused_cleanly() -> None:
+    with TestClient(app) as client:
+        login = client.post(
+            "/api/system/login",
+            json={"email": "admin@datawizz.local", "password": "datawizz123"},
+        )
+        headers = {"Authorization": f"Bearer {login.json()['token']}"}
+        result = client.post(
+            "/api/bi/alerts/test-delivery",
+            headers=headers,
+            json={"notification_channel": "webhook", "destination": "http://127.0.0.1:9/datawizz-alerts"},
+        )
+        assert result.status_code == 200
+        payload = result.json()
+        assert payload["delivery_status"] == "failed"
+        assert "Connection refused" in payload["delivery_error"]
+        assert "switch delivery back to Local event log" in payload["delivery_error"]

@@ -592,6 +592,15 @@ export type MetricAlertSweep = {
   events: MetricAlertEvent[]
 }
 
+export type MetricAlertDeliveryTest = {
+  delivery_status: 'delivered' | 'failed' | string
+  delivery_channel: 'local' | 'webhook' | string
+  destination?: string | null
+  delivery_response_code?: number | null
+  delivery_error?: string | null
+  message: string
+}
+
 export type MetricAlertSchedulerSweep = {
   checked: number
   evaluated: {

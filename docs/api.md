@@ -156,6 +156,7 @@ Pipeline payload shape:
 - `POST /api/bi/alerts/{alert_id}/evaluate`
 - `POST /api/bi/alerts/evaluate-all`
 - `GET /api/bi/alerts/events`
+- `POST /api/bi/alerts/test-delivery`
 - `GET /api/bi/alerts/scheduler/status`
 - `POST /api/bi/alerts/scheduler/run-due`
 - `GET /api/bi/charts`
@@ -190,6 +191,16 @@ Supported delivery channels:
 
 - `local`: records delivery as handled in the DataWizz event log.
 - `webhook`: sends triggered alerts as JSON with `POST` to the configured `destination` URL. Delivery failures are captured on the alert event and do not fail metric evaluation.
+
+Use `POST /api/bi/alerts/test-delivery` with `notification_channel` and `destination` before enabling a webhook-backed alert. This sends a lightweight test payload and returns `delivery_status`, optional HTTP response code, and a friendly error when the receiver is not running.
+
+For local webhook demos, start the included receiver from the project root:
+
+```bash
+python scripts/dev/webhook_receiver.py --port 9009 --path /datawizz-alerts
+```
+
+Then use `http://localhost:9009/datawizz-alerts` as the alert destination. Payloads are retained in `.runtime/webhook-inbox.jsonl`.
 
 ## Notes
 

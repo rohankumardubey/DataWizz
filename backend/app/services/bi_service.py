@@ -364,7 +364,62 @@ class BiService:
             event.delivery_error = f"Webhook returned HTTP {exc.code}."
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
             event.delivery_status = "failed"
-            event.delivery_error = str(exc)
+            event.delivery_error = self._format_webhook_delivery_error(exc, destination)
+
+    def test_metric_alert_delivery(self, notification_channel: str | None, destination: str | None) -> dict:
+        channel, cleaned_destination = self.normalize_alert_delivery(notification_channel, destination)
+        if channel == "local":
+            return {
+                "delivery_status": "delivered",
+                "delivery_channel": channel,
+                "destination": cleaned_destination,
+                "delivery_response_code": None,
+                "delivery_error": None,
+                "message": "Local delivery is ready. Alert events will be retained inside DataWizz.",
+            }
+
+        payload = {
+            "type": "datawizz.metric_alert.delivery_test",
+            "message": "DataWizz metric alert webhook test.",
+            "sent_at": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            response_code = self._post_metric_alert_webhook(str(cleaned_destination), payload)
+            delivery_status = "delivered" if 200 <= response_code < 300 else "failed"
+            return {
+                "delivery_status": delivery_status,
+                "delivery_channel": channel,
+                "destination": cleaned_destination,
+                "delivery_response_code": response_code,
+                "delivery_error": None if delivery_status == "delivered" else f"Webhook returned HTTP {response_code}.",
+                "message": "Webhook delivery test succeeded." if delivery_status == "delivered" else "Webhook delivery test reached the endpoint but it returned a non-success status.",
+            }
+        except urllib.error.HTTPError as exc:
+            return {
+                "delivery_status": "failed",
+                "delivery_channel": channel,
+                "destination": cleaned_destination,
+                "delivery_response_code": exc.code,
+                "delivery_error": f"Webhook returned HTTP {exc.code}.",
+                "message": "Webhook delivery test failed.",
+            }
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            return {
+                "delivery_status": "failed",
+                "delivery_channel": channel,
+                "destination": cleaned_destination,
+                "delivery_response_code": None,
+                "delivery_error": self._format_webhook_delivery_error(exc, str(cleaned_destination)),
+                "message": "Webhook delivery test failed.",
+            }
+
+    def _format_webhook_delivery_error(self, exc: BaseException, destination: str) -> str:
+        raw_message = str(exc)
+        if "Connection refused" in raw_message or "Errno 61" in raw_message:
+            return f"Connection refused. Start a webhook receiver at {destination}, or switch delivery back to Local event log."
+        if "timed out" in raw_message.lower():
+            return f"Webhook request timed out after 3 seconds while calling {destination}."
+        return raw_message
 
     def _build_metric_alert_delivery_payload(
         self,

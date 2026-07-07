@@ -268,6 +268,22 @@ Optional Superset:
 ./run.sh local nosuperset
 ```
 
+### Local webhook receiver for alert demos
+
+Metric alerts can deliver triggered events to a webhook. For a local demo receiver, run this from the project root in a separate terminal:
+
+```bash
+python scripts/dev/webhook_receiver.py --port 9009 --path /datawizz-alerts
+```
+
+Then set an alert webhook URL to:
+
+```text
+http://localhost:9009/datawizz-alerts
+```
+
+Received payloads are retained in `.runtime/webhook-inbox.jsonl`.
+
 ## Demo Flow
 
 For a complete scripted walkthrough, see [docs/demo-workflow.md](./docs/demo-workflow.md).

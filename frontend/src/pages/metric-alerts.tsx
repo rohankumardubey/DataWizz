@@ -15,6 +15,8 @@ const comparisonLabels: Record<string, string> = {
   neq: '!=',
 }
 
+const localWebhookReceiverCommand = 'python scripts/dev/webhook_receiver.py --port 9009 --path /datawizz-alerts'
+
 function statusTone(status: string) {
   if (status === 'triggered') return 'bg-rose-50 text-rose-700'
   if (status === 'ok') return 'bg-emerald-50 text-emerald-700'
@@ -172,6 +174,22 @@ export function MetricAlertsPage() {
     onSuccess: (result) => {
       refreshAlertQueries()
       setStatusMessage(`Scheduler checked ${result.checked} alerts and evaluated ${result.evaluated.length} due rules.`)
+    },
+    onError: (error: Error) => setStatusMessage(error.message),
+  })
+
+  const testDeliveryMutation = useMutation({
+    mutationFn: () => api.testMetricAlertDelivery({
+      notification_channel: notificationChannel,
+      destination: destination || null,
+    }),
+    onSuccess: (result) => {
+      const suffix = result.delivery_response_code ? ` HTTP ${result.delivery_response_code}.` : ''
+      setStatusMessage(
+        result.delivery_status === 'delivered'
+          ? `${result.message}${suffix}`
+          : `${result.message} ${result.delivery_error ?? ''}`.trim(),
+      )
     },
     onError: (error: Error) => setStatusMessage(error.message),
   })
@@ -404,7 +422,17 @@ export function MetricAlertsPage() {
                 </div>
 
                 <div>
-                  <Label>{notificationChannel === 'webhook' ? 'Webhook URL' : 'Local Destination Note'}</Label>
+                  <div className="flex items-center justify-between gap-3">
+                    <Label>{notificationChannel === 'webhook' ? 'Webhook URL' : 'Local Destination Note'}</Label>
+                    <Button
+                      type="button"
+                      tone="ghost"
+                      onClick={() => testDeliveryMutation.mutate()}
+                      disabled={testDeliveryMutation.isPending || (notificationChannel === 'webhook' && !destination.trim())}
+                    >
+                      Test Delivery
+                    </Button>
+                  </div>
                   <Input
                     value={destination}
                     onChange={(event) => setDestination(event.target.value)}
@@ -412,14 +440,20 @@ export function MetricAlertsPage() {
                   />
                   <p className="mt-2 text-xs text-slate-500">
                     {notificationChannel === 'webhook'
-                      ? 'Triggered alerts post a JSON payload to this URL. Delivery failures are recorded on the alert event.'
+                      ? 'Triggered alerts post a JSON payload to this URL. Use Test Delivery before evaluating the alert.'
                       : 'Local delivery records the alert event inside DataWizz without calling an external service.'}
                   </p>
                 </div>
 
                 {notificationChannel === 'webhook' ? (
-                  <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
-                    Webhook delivery only runs when the alert is triggered. Non-triggered checks are marked as skipped.
+                  <div className="space-y-3 rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
+                    <p>
+                      Webhook delivery needs a running receiver. If the receiver is down, the alert still evaluates, but delivery is marked failed with the connection error.
+                    </p>
+                    <div className="rounded-xl border border-amber-200 bg-white/70 p-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700">Local demo receiver</p>
+                      <code className="mt-2 block overflow-x-auto whitespace-nowrap font-mono text-xs text-slate-800">{localWebhookReceiverCommand}</code>
+                    </div>
                   </div>
                 ) : null}
 
