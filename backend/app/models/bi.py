@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -69,6 +69,11 @@ class MetricAlertEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     message: Mapped[str] = mapped_column(Text, nullable=False)
     evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     details_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    delivery_status: Mapped[str] = mapped_column(String(32), nullable=False, default="not_attempted")
+    delivery_channel: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    delivery_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivery_response_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    delivery_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Chart(UUIDPrimaryKeyMixin, TimestampMixin, Base):

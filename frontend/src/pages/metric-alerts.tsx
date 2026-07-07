@@ -22,6 +22,13 @@ function statusTone(status: string) {
   return 'bg-slate-100 text-slate-600'
 }
 
+function deliveryTone(status: string) {
+  if (status === 'delivered') return 'bg-emerald-50 text-emerald-700'
+  if (status === 'failed') return 'bg-rose-50 text-rose-700'
+  if (status === 'skipped') return 'bg-slate-100 text-slate-600'
+  return 'bg-amber-50 text-amber-700'
+}
+
 function defaultAlertName(metric?: SemanticMetric) {
   const base = metric?.name ?? 'metric'
   return `${base}_threshold_alert`
@@ -50,6 +57,7 @@ export function MetricAlertsPage() {
   const [thresholdValue, setThresholdValue] = useState('0')
   const [severity, setSeverity] = useState<'info' | 'warning' | 'critical'>('warning')
   const [enabled, setEnabled] = useState(true)
+  const [notificationChannel, setNotificationChannel] = useState<'local' | 'webhook'>('local')
   const [destination, setDestination] = useState('')
   const [scheduleEnabled, setScheduleEnabled] = useState(false)
   const [scheduleCron, setScheduleCron] = useState('*/15 * * * *')
@@ -83,6 +91,7 @@ export function MetricAlertsPage() {
     setThresholdValue('0')
     setSeverity('warning')
     setEnabled(true)
+    setNotificationChannel('local')
     setDestination('')
     setScheduleEnabled(false)
     setScheduleCron('*/15 * * * *')
@@ -97,6 +106,7 @@ export function MetricAlertsPage() {
     setThresholdValue(String(alert.threshold_value))
     setSeverity(alert.severity as typeof severity)
     setEnabled(alert.enabled)
+    setNotificationChannel(alert.notification_channel === 'webhook' ? 'webhook' : 'local')
     setDestination(alert.destination ?? '')
     setScheduleEnabled(alert.schedule_enabled)
     setScheduleCron(alert.schedule_cron ?? '*/15 * * * *')
@@ -114,7 +124,7 @@ export function MetricAlertsPage() {
         threshold_value: numericThreshold,
         severity,
         enabled,
-        notification_channel: 'local',
+        notification_channel: notificationChannel,
         destination: destination || null,
         schedule_enabled: scheduleEnabled,
         schedule_cron: scheduleEnabled ? scheduleCron : null,
@@ -385,10 +395,33 @@ export function MetricAlertsPage() {
                     Enabled for sweeps
                   </label>
                   <div>
-                    <Label>Local Destination Note</Label>
-                    <Input value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="analytics-ops, local demo, stakeholder alias" />
+                    <Label>Delivery Channel</Label>
+                    <Select value={notificationChannel} onChange={(event) => setNotificationChannel(event.target.value as typeof notificationChannel)}>
+                      <option value="local">Local event log</option>
+                      <option value="webhook">Webhook POST</option>
+                    </Select>
                   </div>
                 </div>
+
+                <div>
+                  <Label>{notificationChannel === 'webhook' ? 'Webhook URL' : 'Local Destination Note'}</Label>
+                  <Input
+                    value={destination}
+                    onChange={(event) => setDestination(event.target.value)}
+                    placeholder={notificationChannel === 'webhook' ? 'http://localhost:9009/datawizz-alerts' : 'analytics-ops, local demo, stakeholder alias'}
+                  />
+                  <p className="mt-2 text-xs text-slate-500">
+                    {notificationChannel === 'webhook'
+                      ? 'Triggered alerts post a JSON payload to this URL. Delivery failures are recorded on the alert event.'
+                      : 'Local delivery records the alert event inside DataWizz without calling an external service.'}
+                  </p>
+                </div>
+
+                {notificationChannel === 'webhook' ? (
+                  <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
+                    Webhook delivery only runs when the alert is triggered. Non-triggered checks are marked as skipped.
+                  </div>
+                ) : null}
 
                 <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
                   <label className="mt-6 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
@@ -448,15 +481,27 @@ export function MetricAlertsPage() {
                           <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
                             {event.trigger_type}
                           </span>
+                          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${deliveryTone(event.delivery_status)}`}>
+                            {event.delivery_status}
+                          </span>
                         </div>
                         <p className="mt-3 font-semibold text-slate-950">{event.alert_name ?? 'Metric alert'}</p>
                         <p className="mt-1 text-sm leading-6 text-slate-600">{event.message}</p>
+                        {event.delivery_error ? (
+                          <p className="mt-2 text-xs text-rose-700">Delivery: {event.delivery_error}</p>
+                        ) : null}
                       </div>
                       <div className="text-left text-xs text-slate-500 lg:text-right">
                         <p>{formatDate(event.evaluated_at)}</p>
                         <p className="mt-1 font-mono">
                           value {event.observed_value ?? 'n/a'} / threshold {event.threshold_value}
                         </p>
+                        {event.delivery_channel ? (
+                          <p className="mt-1">
+                            {event.delivery_channel}
+                            {event.delivery_response_code ? ` • HTTP ${event.delivery_response_code}` : ''}
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                   </div>

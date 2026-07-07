@@ -1,4 +1,7 @@
+import json
+import threading
 from datetime import datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pyarrow as pa
 from deltalake import write_deltalake
@@ -143,3 +146,108 @@ def test_metric_alert_can_be_created_evaluated_and_listed() -> None:
         assert sweep.status_code == 200
         assert sweep.json()["checked"] >= 1
         assert sweep.json()["triggered"] >= 1
+
+
+def test_triggered_metric_alert_delivers_webhook_payload() -> None:
+    received_payloads: list[dict] = []
+
+    class WebhookHandler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler hook name.
+            content_length = int(self.headers.get("Content-Length", "0"))
+            received_payloads.append(json.loads(self.rfile.read(content_length).decode("utf-8")))
+            self.send_response(202)
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - BaseHTTPRequestHandler signature.
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), WebhookHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    settings = get_settings()
+    table_path = settings.curated_storage_path + "/metric_alert_webhook_orders"
+    write_deltalake(
+        table_path,
+        pa.table({"status": ["completed", "completed"], "revenue": [150.0, 75.0]}),
+        mode="overwrite",
+    )
+
+    try:
+        with TestClient(app) as client:
+            db = SessionLocal()
+            try:
+                table = DeltaTable(
+                    name="metric_alert_webhook_orders",
+                    schema_name="analytics",
+                    storage_path=table_path,
+                    mode="overwrite",
+                    schema_json=[
+                        {"name": "status", "type": "string"},
+                        {"name": "revenue", "type": "double"},
+                    ],
+                    row_count=2,
+                )
+                db.add(table)
+                db.flush()
+                dataset = SemanticDataset(
+                    name="metric_alert_webhook_orders_dataset",
+                    source_type="delta_table",
+                    source_ref=table.name,
+                    schema_json=table.schema_json,
+                    metrics_json=[{"name": "revenue_sum", "expression": 'SUM("revenue")'}],
+                    dimensions_json=[{"name": "status"}],
+                )
+                db.add(dataset)
+                db.flush()
+                metric = SemanticMetric(
+                    name="metric_alert_webhook_revenue",
+                    label="Webhook Revenue",
+                    dataset_id=dataset.id,
+                    expression='SUM("revenue")',
+                    filter_sql="status = 'completed'",
+                    format="currency",
+                    is_certified=True,
+                )
+                db.add(metric)
+                db.commit()
+                metric_id = metric.id
+            finally:
+                db.close()
+
+            login = client.post(
+                "/api/system/login",
+                json={"email": "admin@datawizz.local", "password": "datawizz123"},
+            )
+            headers = {"Authorization": f"Bearer {login.json()['token']}"}
+            webhook_url = f"http://127.0.0.1:{server.server_port}/alerts"
+
+            created = client.post(
+                "/api/bi/alerts",
+                headers=headers,
+                json={
+                    "name": "webhook_revenue_alert",
+                    "metric_id": metric_id,
+                    "comparison": "gt",
+                    "threshold_value": 200,
+                    "severity": "critical",
+                    "enabled": True,
+                    "notification_channel": "webhook",
+                    "destination": webhook_url,
+                },
+            )
+            assert created.status_code == 200
+
+            evaluated = client.post(f"/api/bi/alerts/{created.json()['id']}/evaluate", headers=headers)
+            assert evaluated.status_code == 200
+            event = evaluated.json()["event"]
+            assert event["triggered"] is True
+            assert event["delivery_status"] == "delivered"
+            assert event["delivery_channel"] == "webhook"
+            assert event["delivery_response_code"] == 202
+            assert received_payloads[0]["type"] == "datawizz.metric_alert.triggered"
+            assert received_payloads[0]["alert"]["name"] == "webhook_revenue_alert"
+            assert received_payloads[0]["metric"]["label"] == "Webhook Revenue"
+    finally:
+        server.shutdown()
+        server.server_close()
