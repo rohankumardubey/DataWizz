@@ -264,6 +264,60 @@ class MetricAlertSchedulerStatusResponse(BaseModel):
     last_summary: MetricAlertSchedulerSweepResponse
 
 
+class MetricAlertIncidentNoteRead(TimestampedModel):
+    incident_id: str
+    author_email: str
+    body: str
+
+    model_config = {"from_attributes": True}
+
+
+class MetricAlertIncidentRead(TimestampedModel):
+    alert_id: str
+    alert_name: str | None = None
+    metric_label: str | None = None
+    alert_last_status: str | None = None
+    opened_by_event_id: str | None = None
+    latest_event_id: str | None = None
+    title: str
+    status: str
+    severity: str
+    assignee_email: str | None = None
+    trigger_count: int
+    latest_observed_value: float | None = None
+    latest_message: str | None = None
+    opened_at: datetime
+    last_triggered_at: datetime
+    acknowledged_at: datetime | None = None
+    acknowledged_by_email: str | None = None
+    resolved_at: datetime | None = None
+    resolved_by_email: str | None = None
+    resolution_note: str | None = None
+    notes: list[MetricAlertIncidentNoteRead] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class MetricAlertIncidentListResponse(BaseModel):
+    items: list[MetricAlertIncidentRead]
+
+
+class MetricAlertIncidentAcknowledgeRequest(BaseModel):
+    assignee_email: str | None = Field(default=None, max_length=255)
+
+
+class MetricAlertIncidentAssignmentRequest(BaseModel):
+    assignee_email: str | None = Field(default=None, max_length=255)
+
+
+class MetricAlertIncidentResolutionRequest(BaseModel):
+    resolution_note: str = Field(min_length=1, max_length=5000)
+
+
+class MetricAlertIncidentNoteCreateRequest(BaseModel):
+    body: str = Field(min_length=1, max_length=5000)
+
+
 class ChartCreateRequest(BaseModel):
     name: str
     chart_type: str

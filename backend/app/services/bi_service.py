@@ -18,6 +18,7 @@ from app.models.auth import User
 from app.models.bi import Chart, Dashboard, DashboardWidget, MetricAlert, MetricAlertEvent, ReportSchedule, ReportSnapshot, SemanticDataset, SemanticMetric
 from app.models.catalog import DeltaTable, UploadedFile
 from app.services.duckdb_service import DuckDBService
+from app.services.metric_alert_incident_service import metric_alert_incident_service
 from app.utils.naming import slugify_identifier
 
 
@@ -295,6 +296,8 @@ class BiService:
         alert.last_evaluated_at = evaluated_at
         db.flush()
         self.deliver_metric_alert_event(db, alert, event, metric)
+        if event.triggered:
+            metric_alert_incident_service.record_trigger(db, alert, event)
         return event
 
     def evaluate_enabled_metric_alerts(self, db: Session) -> list[MetricAlertEvent]:

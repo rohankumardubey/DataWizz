@@ -204,6 +204,9 @@ export function MetricAlertsPage() {
         description="Monitor semantic metrics with local threshold rules, keep an auditable event trail, and turn dashboards into operational BI surfaces."
         actions={
           <>
+            <Link className="ui-button inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50" to="/bi/incidents">
+              Open Incidents
+            </Link>
             <Button tone="ghost" onClick={resetDraft}>New Alert</Button>
             <Button tone="secondary" onClick={() => runDueSchedulesMutation.mutate()} disabled={runDueSchedulesMutation.isPending}>
               Run Due Schedules

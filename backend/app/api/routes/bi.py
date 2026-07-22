@@ -35,6 +35,13 @@ from app.schemas.bi import (
     MetricAlertDeliveryTestResponse,
     MetricAlertEvaluationResponse,
     MetricAlertEventListResponse,
+    MetricAlertIncidentAcknowledgeRequest,
+    MetricAlertIncidentAssignmentRequest,
+    MetricAlertIncidentListResponse,
+    MetricAlertIncidentNoteCreateRequest,
+    MetricAlertIncidentNoteRead,
+    MetricAlertIncidentRead,
+    MetricAlertIncidentResolutionRequest,
     MetricAlertListResponse,
     MetricAlertSchedulerStatusResponse,
     MetricAlertSchedulerSweepResponse,
@@ -60,6 +67,7 @@ from app.schemas.bi import (
 )
 from app.services.bi_service import BiService
 from app.services.metric_alert_scheduler_service import metric_alert_scheduler_service
+from app.services.metric_alert_incident_service import metric_alert_incident_service
 from app.services.superset_catalog_service import superset_catalog_service
 
 
@@ -369,6 +377,154 @@ def list_alert_events(
     db: Session = Depends(get_db),
 ) -> MetricAlertEventListResponse:
     return MetricAlertEventListResponse(items=bi_service.list_alert_events(db, alert_id=alert_id, limit=limit))
+
+
+@router.get("/incidents", response_model=MetricAlertIncidentListResponse)
+def list_alert_incidents(
+    alert_id: str | None = None,
+    status: str | None = Query(default="active", pattern="^(active|open|acknowledged|resolved|all)$"),
+    severity: str | None = Query(default=None, pattern="^(info|warning|critical)$"),
+    assignee_email: str | None = None,
+    limit: int = Query(default=100, ge=1, le=200),
+    db: Session = Depends(get_db),
+) -> MetricAlertIncidentListResponse:
+    normalized_status = None if status == "all" else status
+    return MetricAlertIncidentListResponse(
+        items=metric_alert_incident_service.list_incidents(
+            db,
+            alert_id=alert_id,
+            status=normalized_status,
+            severity=severity,
+            assignee_email=assignee_email,
+            limit=limit,
+        )
+    )
+
+
+@router.get("/incidents/{incident_id}", response_model=MetricAlertIncidentRead)
+def get_alert_incident(incident_id: str, db: Session = Depends(get_db)) -> MetricAlertIncidentRead:
+    incident = metric_alert_incident_service.get_incident(db, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Alert incident not found")
+    return MetricAlertIncidentRead.model_validate(metric_alert_incident_service.serialize_incident(db, incident))
+
+
+@router.post(
+    "/incidents/{incident_id}/acknowledge",
+    response_model=MetricAlertIncidentRead,
+    dependencies=[Depends(require_roles("admin", "analyst"))],
+)
+def acknowledge_alert_incident(
+    incident_id: str,
+    payload: MetricAlertIncidentAcknowledgeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MetricAlertIncidentRead:
+    incident = metric_alert_incident_service.get_incident(db, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Alert incident not found")
+    try:
+        metric_alert_incident_service.acknowledge(
+            db,
+            incident,
+            actor_email=current_user.email,
+            assignee_email=payload.assignee_email,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(incident)
+    return MetricAlertIncidentRead.model_validate(metric_alert_incident_service.serialize_incident(db, incident))
+
+
+@router.put(
+    "/incidents/{incident_id}/assignment",
+    response_model=MetricAlertIncidentRead,
+    dependencies=[Depends(require_roles("admin", "analyst"))],
+)
+def assign_alert_incident(
+    incident_id: str,
+    payload: MetricAlertIncidentAssignmentRequest,
+    db: Session = Depends(get_db),
+) -> MetricAlertIncidentRead:
+    incident = metric_alert_incident_service.get_incident(db, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Alert incident not found")
+    try:
+        metric_alert_incident_service.assign(incident, payload.assignee_email)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(incident)
+    return MetricAlertIncidentRead.model_validate(metric_alert_incident_service.serialize_incident(db, incident))
+
+
+@router.post(
+    "/incidents/{incident_id}/resolve",
+    response_model=MetricAlertIncidentRead,
+    dependencies=[Depends(require_roles("admin", "analyst"))],
+)
+def resolve_alert_incident(
+    incident_id: str,
+    payload: MetricAlertIncidentResolutionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MetricAlertIncidentRead:
+    incident = metric_alert_incident_service.get_incident(db, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Alert incident not found")
+    try:
+        metric_alert_incident_service.resolve(
+            incident,
+            actor_email=current_user.email,
+            resolution_note=payload.resolution_note,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(incident)
+    return MetricAlertIncidentRead.model_validate(metric_alert_incident_service.serialize_incident(db, incident))
+
+
+@router.post(
+    "/incidents/{incident_id}/reopen",
+    response_model=MetricAlertIncidentRead,
+    dependencies=[Depends(require_roles("admin", "analyst"))],
+)
+def reopen_alert_incident(incident_id: str, db: Session = Depends(get_db)) -> MetricAlertIncidentRead:
+    incident = metric_alert_incident_service.get_incident(db, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Alert incident not found")
+    try:
+        metric_alert_incident_service.reopen(db, incident)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(incident)
+    return MetricAlertIncidentRead.model_validate(metric_alert_incident_service.serialize_incident(db, incident))
+
+
+@router.post(
+    "/incidents/{incident_id}/notes",
+    response_model=MetricAlertIncidentNoteRead,
+    dependencies=[Depends(require_roles("admin", "analyst"))],
+)
+def add_alert_incident_note(
+    incident_id: str,
+    payload: MetricAlertIncidentNoteCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MetricAlertIncidentNoteRead:
+    incident = metric_alert_incident_service.get_incident(db, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Alert incident not found")
+    try:
+        note = metric_alert_incident_service.add_note(db, incident, author_email=current_user.email, body=payload.body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(note)
+    return MetricAlertIncidentNoteRead.model_validate(note)
 
 
 @router.get("/charts", response_model=ChartListResponse)

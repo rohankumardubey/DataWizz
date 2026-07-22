@@ -147,6 +147,61 @@ def test_metric_alert_can_be_created_evaluated_and_listed() -> None:
         assert sweep.json()["checked"] >= 1
         assert sweep.json()["triggered"] >= 1
 
+        incidents = client.get(f"/api/bi/incidents?alert_id={alert['id']}&status=active", headers=headers)
+        assert incidents.status_code == 200
+        assert len(incidents.json()["items"]) == 1
+        incident = incidents.json()["items"][0]
+        assert incident["status"] == "open"
+        assert incident["severity"] == "critical"
+        assert incident["trigger_count"] >= 3
+        assert incident["alert_name"] == "completed_revenue_alert"
+
+        acknowledged = client.post(
+            f"/api/bi/incidents/{incident['id']}/acknowledge",
+            headers=headers,
+            json={"assignee_email": "analytics-oncall@datawizz.local"},
+        )
+        assert acknowledged.status_code == 200
+        assert acknowledged.json()["status"] == "acknowledged"
+        assert acknowledged.json()["assignee_email"] == "analytics-oncall@datawizz.local"
+        assert acknowledged.json()["acknowledged_by_email"] == "admin@datawizz.local"
+
+        note = client.post(
+            f"/api/bi/incidents/{incident['id']}/notes",
+            headers=headers,
+            json={"body": "Investigating the completed revenue increase."},
+        )
+        assert note.status_code == 200
+        assert note.json()["author_email"] == "admin@datawizz.local"
+
+        detail = client.get(f"/api/bi/incidents/{incident['id']}", headers=headers)
+        assert detail.status_code == 200
+        assert detail.json()["notes"][0]["body"] == "Investigating the completed revenue increase."
+
+        resolved = client.post(
+            f"/api/bi/incidents/{incident['id']}/resolve",
+            headers=headers,
+            json={"resolution_note": "Expected increase after the regional campaign."},
+        )
+        assert resolved.status_code == 200
+        assert resolved.json()["status"] == "resolved"
+        assert resolved.json()["resolved_by_email"] == "admin@datawizz.local"
+
+        active_after_resolution = client.get(f"/api/bi/incidents?alert_id={alert['id']}&status=active", headers=headers)
+        assert active_after_resolution.status_code == 200
+        assert active_after_resolution.json()["items"] == []
+
+        retriggered = client.post(f"/api/bi/alerts/{alert['id']}/evaluate", headers=headers)
+        assert retriggered.status_code == 200
+        new_active = client.get(f"/api/bi/incidents?alert_id={alert['id']}&status=active", headers=headers)
+        assert new_active.status_code == 200
+        assert len(new_active.json()["items"]) == 1
+        assert new_active.json()["items"][0]["id"] != incident["id"]
+
+        conflicting_reopen = client.post(f"/api/bi/incidents/{incident['id']}/reopen", headers=headers)
+        assert conflicting_reopen.status_code == 409
+        assert conflicting_reopen.json()["detail"] == "This alert already has an active incident"
+
 
 def test_triggered_metric_alert_delivers_webhook_payload() -> None:
     received_payloads: list[dict] = []

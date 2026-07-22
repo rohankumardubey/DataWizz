@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -74,6 +74,45 @@ class MetricAlertEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     delivery_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     delivery_response_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     delivery_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class MetricAlertIncident(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "metric_alert_incidents"
+    __table_args__ = (
+        Index(
+            "uq_metric_alert_incidents_active_alert",
+            "alert_id",
+            unique=True,
+            sqlite_where=text("status IN ('open', 'acknowledged')"),
+            postgresql_where=text("status IN ('open', 'acknowledged')"),
+        ),
+    )
+
+    alert_id: Mapped[str] = mapped_column(ForeignKey("metric_alerts.id", ondelete="CASCADE"), nullable=False)
+    opened_by_event_id: Mapped[str | None] = mapped_column(ForeignKey("metric_alert_events.id", ondelete="SET NULL"), nullable=True)
+    latest_event_id: Mapped[str | None] = mapped_column(ForeignKey("metric_alert_events.id", ondelete="SET NULL"), nullable=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="open")
+    severity: Mapped[str] = mapped_column(String(32), nullable=False, default="warning")
+    assignee_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    trigger_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    latest_observed_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latest_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_triggered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    acknowledged_by_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_by_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class MetricAlertIncidentNote(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "metric_alert_incident_notes"
+
+    incident_id: Mapped[str] = mapped_column(ForeignKey("metric_alert_incidents.id", ondelete="CASCADE"), nullable=False)
+    author_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class Chart(UUIDPrimaryKeyMixin, TimestampMixin, Base):

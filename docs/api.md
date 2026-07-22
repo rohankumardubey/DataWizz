@@ -159,6 +159,13 @@ Pipeline payload shape:
 - `POST /api/bi/alerts/test-delivery`
 - `GET /api/bi/alerts/scheduler/status`
 - `POST /api/bi/alerts/scheduler/run-due`
+- `GET /api/bi/incidents`
+- `GET /api/bi/incidents/{incident_id}`
+- `POST /api/bi/incidents/{incident_id}/acknowledge`
+- `PUT /api/bi/incidents/{incident_id}/assignment`
+- `POST /api/bi/incidents/{incident_id}/notes`
+- `POST /api/bi/incidents/{incident_id}/resolve`
+- `POST /api/bi/incidents/{incident_id}/reopen`
 - `GET /api/bi/charts`
 - `POST /api/bi/charts`
 - `POST /api/bi/charts/generate`
@@ -201,6 +208,14 @@ python scripts/dev/webhook_receiver.py --port 9009 --path /datawizz-alerts
 ```
 
 Then use `http://localhost:9009/datawizz-alerts` as the alert destination. Payloads are retained in `.runtime/webhook-inbox.jsonl`.
+
+### Alert incident workflow
+
+Every triggered metric-alert event opens an incident unless that alert already has an `open` or `acknowledged` incident. Further triggers update the active incident's latest signal and trigger count instead of creating duplicate operational work. Once an incident is resolved, a later trigger opens a new incident while the resolved occurrence remains available for audit.
+
+`GET /api/bi/incidents` accepts optional `alert_id`, `status`, `severity`, `assignee_email`, and `limit` filters. `status` supports `active`, `open`, `acknowledged`, `resolved`, and `all`; the default is `active`.
+
+Lifecycle writes require an `admin` or `analyst` session. Acknowledge can assign a responder in the same request, assignment accepts a nullable `assignee_email`, investigation notes retain the authenticated author's email, and resolution requires a non-empty `resolution_note`.
 
 ## Notes
 
