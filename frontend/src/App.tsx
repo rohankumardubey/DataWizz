@@ -3,6 +3,7 @@ import { RequireAuth } from './auth/require-auth'
 import { RequireRole } from './auth/require-role'
 import { AppShell } from './components/app-shell'
 import { BiHomePage } from './pages/bi-home'
+import { AlertIncidentsPage } from './pages/alert-incidents'
 import { CatalogPage } from './pages/catalog'
 import { ChartBuilderPage } from './pages/chart-builder'
 import { DashboardPage } from './pages/dashboard'
@@ -47,6 +48,7 @@ function App() {
             <Route path="/bi/datasets" element={<DatasetsPage />} />
             <Route path="/bi/metrics" element={<MetricsPage />} />
             <Route path="/bi/alerts" element={<MetricAlertsPage />} />
+            <Route path="/bi/incidents" element={<AlertIncidentsPage />} />
             <Route path="/bi/charts/new" element={<ChartBuilderPage />} />
             <Route path="/bi/dashboards/new" element={<DashboardBuilderPage />} />
             <Route path="/bi/reports" element={<ReportSchedulerPage />} />

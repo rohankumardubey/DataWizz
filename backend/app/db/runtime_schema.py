@@ -141,6 +141,67 @@ def ensure_runtime_schema(db_engine: Engine) -> None:
             if "delivery_error" not in metric_alert_event_columns:
                 connection.execute(text("ALTER TABLE metric_alert_events ADD COLUMN delivery_error TEXT"))
 
+    if "metric_alert_incidents" not in table_names:
+        with db_engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE metric_alert_incidents (
+                        id VARCHAR PRIMARY KEY,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                        alert_id VARCHAR NOT NULL,
+                        opened_by_event_id VARCHAR,
+                        latest_event_id VARCHAR,
+                        title VARCHAR(255) NOT NULL,
+                        status VARCHAR(32) NOT NULL DEFAULT 'open',
+                        severity VARCHAR(32) NOT NULL DEFAULT 'warning',
+                        assignee_email VARCHAR(255),
+                        trigger_count INTEGER NOT NULL DEFAULT 1,
+                        latest_observed_value FLOAT,
+                        latest_message TEXT,
+                        opened_at DATETIME NOT NULL,
+                        last_triggered_at DATETIME NOT NULL,
+                        acknowledged_at DATETIME,
+                        acknowledged_by_email VARCHAR(255),
+                        resolved_at DATETIME,
+                        resolved_by_email VARCHAR(255),
+                        resolution_note TEXT,
+                        FOREIGN KEY(alert_id) REFERENCES metric_alerts(id) ON DELETE CASCADE,
+                        FOREIGN KEY(opened_by_event_id) REFERENCES metric_alert_events(id) ON DELETE SET NULL,
+                        FOREIGN KEY(latest_event_id) REFERENCES metric_alert_events(id) ON DELETE SET NULL
+                    )
+                    """
+                )
+            )
+            connection.execute(text("CREATE INDEX ix_metric_alert_incidents_status_last_triggered_at ON metric_alert_incidents(status, last_triggered_at)"))
+            connection.execute(text("CREATE INDEX ix_metric_alert_incidents_alert_id_status ON metric_alert_incidents(alert_id, status)"))
+            connection.execute(text("CREATE UNIQUE INDEX uq_metric_alert_incidents_active_alert ON metric_alert_incidents(alert_id) WHERE status IN ('open', 'acknowledged')"))
+    else:
+        metric_alert_incident_indexes = {index["name"] for index in inspector.get_indexes("metric_alert_incidents")}
+        if "uq_metric_alert_incidents_active_alert" not in metric_alert_incident_indexes:
+            with db_engine.begin() as connection:
+                connection.execute(text("CREATE UNIQUE INDEX uq_metric_alert_incidents_active_alert ON metric_alert_incidents(alert_id) WHERE status IN ('open', 'acknowledged')"))
+
+    if "metric_alert_incident_notes" not in table_names:
+        with db_engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE metric_alert_incident_notes (
+                        id VARCHAR PRIMARY KEY,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                        incident_id VARCHAR NOT NULL,
+                        author_email VARCHAR(255) NOT NULL,
+                        body TEXT NOT NULL,
+                        FOREIGN KEY(incident_id) REFERENCES metric_alert_incidents(id) ON DELETE CASCADE
+                    )
+                    """
+                )
+            )
+            connection.execute(text("CREATE INDEX ix_metric_alert_incident_notes_incident_id_created_at ON metric_alert_incident_notes(incident_id, created_at)"))
+
     if "quality_runs" in table_names:
         quality_run_columns = {column["name"] for column in inspector.get_columns("quality_runs")}
         if "execution_engine" not in quality_run_columns:

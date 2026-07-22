@@ -136,6 +136,7 @@ It is especially useful when you want to demonstrate:
 - Semantic dataset explorer
 - Governed semantic metrics layer with certified aggregate definitions and DuckDB previews
 - Metric alerts with local threshold evaluation, cron monitoring, auditable event history, and webhook delivery
+- Alert incident operations with automatic trigger deduplication, acknowledgement, assignment, investigation notes, resolution, and reopen workflows
 - Natural-language chart generation that maps plain-English prompts to datasets, SQL, and chart configs
 - Dataset-driven chart builder
 - Saved chart library with traceability into dashboards and report schedules

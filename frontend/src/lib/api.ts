@@ -22,6 +22,8 @@ import type {
   MetricAlertDeliveryTest,
   MetricAlertEvaluation,
   MetricAlertEvent,
+  MetricAlertIncident,
+  MetricAlertIncidentNote,
   MetricAlertSchedulerStatus,
   MetricAlertSchedulerSweep,
   MetricAlertSweep,
@@ -319,6 +321,37 @@ export const api = {
   getMetricAlertSchedulerStatus: () => request<MetricAlertSchedulerStatus>('/bi/alerts/scheduler/status'),
   runDueMetricAlertSchedules: () =>
     request<MetricAlertSchedulerSweep>('/bi/alerts/scheduler/run-due', { method: 'POST' }),
+  listMetricAlertIncidents: (filters: {
+    alert_id?: string
+    status?: 'active' | 'open' | 'acknowledged' | 'resolved' | 'all'
+    severity?: 'info' | 'warning' | 'critical'
+    assignee_email?: string
+    limit?: number
+  } = {}) => request<ListResponse<MetricAlertIncident>>(`/bi/incidents${queryString(filters)}`),
+  getMetricAlertIncident: (incidentId: string) =>
+    request<MetricAlertIncident>(`/bi/incidents/${encodeURIComponent(incidentId)}`),
+  acknowledgeMetricAlertIncident: (incidentId: string, payload: { assignee_email?: string | null }) =>
+    request<MetricAlertIncident>(`/bi/incidents/${encodeURIComponent(incidentId)}/acknowledge`, {
+      method: 'POST',
+      body: json(payload),
+    }),
+  assignMetricAlertIncident: (incidentId: string, payload: { assignee_email?: string | null }) =>
+    request<MetricAlertIncident>(`/bi/incidents/${encodeURIComponent(incidentId)}/assignment`, {
+      method: 'PUT',
+      body: json(payload),
+    }),
+  resolveMetricAlertIncident: (incidentId: string, payload: { resolution_note: string }) =>
+    request<MetricAlertIncident>(`/bi/incidents/${encodeURIComponent(incidentId)}/resolve`, {
+      method: 'POST',
+      body: json(payload),
+    }),
+  reopenMetricAlertIncident: (incidentId: string) =>
+    request<MetricAlertIncident>(`/bi/incidents/${encodeURIComponent(incidentId)}/reopen`, { method: 'POST' }),
+  addMetricAlertIncidentNote: (incidentId: string, payload: { body: string }) =>
+    request<MetricAlertIncidentNote>(`/bi/incidents/${encodeURIComponent(incidentId)}/notes`, {
+      method: 'POST',
+      body: json(payload),
+    }),
   listCharts: () => request<ListResponse<Chart>>('/bi/charts'),
   createChart: (payload: JsonBody) => request<Chart>('/bi/charts', { method: 'POST', body: json(payload) }),
   updateChart: (chartId: string, payload: JsonBody) =>

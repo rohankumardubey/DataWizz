@@ -635,6 +635,42 @@ export type MetricAlertSchedulerStatus = {
   last_summary: MetricAlertSchedulerSweep
 }
 
+export type MetricAlertIncidentNote = {
+  id: string
+  incident_id: string
+  author_email: string
+  body: string
+  created_at: string
+  updated_at: string
+}
+
+export type MetricAlertIncident = {
+  id: string
+  alert_id: string
+  alert_name?: string | null
+  metric_label?: string | null
+  alert_last_status?: string | null
+  opened_by_event_id?: string | null
+  latest_event_id?: string | null
+  title: string
+  status: 'open' | 'acknowledged' | 'resolved'
+  severity: 'info' | 'warning' | 'critical'
+  assignee_email?: string | null
+  trigger_count: number
+  latest_observed_value?: number | null
+  latest_message?: string | null
+  opened_at: string
+  last_triggered_at: string
+  acknowledged_at?: string | null
+  acknowledged_by_email?: string | null
+  resolved_at?: string | null
+  resolved_by_email?: string | null
+  resolution_note?: string | null
+  notes: MetricAlertIncidentNote[]
+  created_at: string
+  updated_at: string
+}
+
 export type Chart = {
   id: string
   name: string

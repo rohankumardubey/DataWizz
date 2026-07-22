@@ -60,7 +60,7 @@ storage/
 - `tables`: list and preview Delta tables
 - `pipelines`: save/load pipelines, validate graph, execute manually
 - `runs`: pipeline runs and logs
-- `bi`: datasets, semantic metrics, metric alerts, charts, dashboards, report schedules
+- `bi`: datasets, semantic metrics, metric alerts, alert incidents, charts, dashboards, report schedules
 - `system`: dashboard metrics, health, configuration snapshot
 
 ### Service Layer
@@ -71,6 +71,7 @@ storage/
 - `PipelineService`: DAG validation, topological execution, logging
 - `MetadataService`: shared CRUD helpers for persisted entities
 - `BiService`: semantic metric compilation, chart query previews, dashboard persistence
+- `MetricAlertIncidentService`: triggered-event deduplication, incident lifecycle, ownership, and investigation notes
 - `AirflowDagService`: Python DAG code generation from pipeline JSON
 
 ### Persistence Layer
@@ -89,6 +90,8 @@ Metadata lives in PostgreSQL and includes:
 - semantic_metrics
 - metric_alerts
 - metric_alert_events
+- metric_alert_incidents
+- metric_alert_incident_notes
 - charts
 - dashboards
 - dashboard_widgets
@@ -137,6 +140,7 @@ The in-app BI module is intentionally lightweight in the MVP:
 - datasets map to Delta tables or saved SQL
 - semantic metrics store reusable aggregate expressions, optional filters, default dimensions, owner metadata, and certification status
 - metric alerts evaluate threshold rules over semantic metrics, support cron-based local monitoring, update the latest alert state, retain local event history, and can deliver triggered events to webhooks
+- triggered alert events automatically open or update one active incident per alert; responders can acknowledge, assign, annotate, resolve, and reopen incidents while preserving prior resolved occurrences
 - natural-language chart generation deterministically maps analyst prompts to semantic datasets, DuckDB SQL, chart type, and editable visualization config
 - charts persist configuration and rendering metadata
 - dashboards store widget layout and chart references

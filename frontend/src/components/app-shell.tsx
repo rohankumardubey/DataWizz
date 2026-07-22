@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Cpu, Database, GitBranch, LayoutDashboard, LineChart, LogOut, Logs, MoonStar, PlaySquare, Search, Settings2, Sigma, Sparkles, SunMedium, TableProperties, Workflow } from 'lucide-react'
+import { Bell, CircleAlert, Cpu, Database, GitBranch, LayoutDashboard, LineChart, LogOut, Logs, MoonStar, PlaySquare, Search, Settings2, Sigma, Sparkles, SunMedium, TableProperties, Workflow } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/auth-context'
@@ -31,6 +31,7 @@ const navGroups = [
       { label: 'Datasets', to: '/bi/datasets', icon: Database, end: true, roles: ['admin', 'analyst'] },
       { label: 'Metrics Layer', to: '/bi/metrics', icon: Sigma, end: true, roles: ['admin', 'analyst'] },
       { label: 'Metric Alerts', to: '/bi/alerts', icon: Bell, end: true, roles: ['admin', 'analyst'] },
+      { label: 'Alert Incidents', to: '/bi/incidents', icon: CircleAlert, end: true, roles: ['admin', 'analyst'] },
       { label: 'Chart Builder', to: '/bi/charts/new', icon: LineChart, end: true, roles: ['admin', 'analyst'] },
       { label: 'Saved Charts', to: '/bi/charts', icon: LineChart, end: true },
       { label: 'Dashboard Builder', to: '/bi/dashboards/new', icon: LayoutDashboard, end: true, roles: ['admin', 'analyst'] },
